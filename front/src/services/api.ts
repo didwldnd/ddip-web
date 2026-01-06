@@ -6,15 +6,23 @@ import {
   LoginRequest,
   RegisterRequest,
   AuthResponse,
+  SupportRequest,
+  SupportResponse,
+  BidResponse,
 } from '@/src/types/api';
+import { tokenStorage } from '@/src/lib/auth';
 
 // 인메모리 저장소 (Mock API용)
 const projectStore = new Map<number, ProjectResponse>();
 const auctionStore = new Map<number, AuctionResponse>();
+const supportStore = new Map<number, SupportResponse>();
+const bidStore = new Map<number, BidResponse>();
 
 // localStorage 키
 const PROJECT_STORE_KEY = 'ddip_projects';
 const AUCTION_STORE_KEY = 'ddip_auctions';
+const SUPPORT_STORE_KEY = 'ddip_supports';
+const BID_STORE_KEY = 'ddip_bids';
 
 // localStorage에서 데이터 로드
 function loadProjectsFromStorage(): void {
@@ -66,10 +74,60 @@ function saveAuctionsToStorage(): void {
   }
 }
 
+function loadSupportsFromStorage(): void {
+  try {
+    const stored = localStorage.getItem(SUPPORT_STORE_KEY);
+    if (stored) {
+      const supports = JSON.parse(stored) as SupportResponse[];
+      supports.forEach(support => {
+        supportStore.set(support.id, support);
+      });
+      console.log(`localStorage에서 ${supports.length}개 후원 내역 로드됨`);
+    }
+  } catch (error) {
+    console.error('후원 내역 로드 실패:', error);
+  }
+}
+
+function saveSupportsToStorage(): void {
+  try {
+    const supports = Array.from(supportStore.values());
+    localStorage.setItem(SUPPORT_STORE_KEY, JSON.stringify(supports));
+  } catch (error) {
+    console.error('후원 내역 저장 실패:', error);
+  }
+}
+
+function loadBidsFromStorage(): void {
+  try {
+    const stored = localStorage.getItem(BID_STORE_KEY);
+    if (stored) {
+      const bids = JSON.parse(stored) as BidResponse[];
+      bids.forEach(bid => {
+        bidStore.set(bid.id, bid);
+      });
+      console.log(`localStorage에서 ${bids.length}개 입찰 내역 로드됨`);
+    }
+  } catch (error) {
+    console.error('입찰 내역 로드 실패:', error);
+  }
+}
+
+function saveBidsToStorage(): void {
+  try {
+    const bids = Array.from(bidStore.values());
+    localStorage.setItem(BID_STORE_KEY, JSON.stringify(bids));
+  } catch (error) {
+    console.error('입찰 내역 저장 실패:', error);
+  }
+}
+
 // 초기화 시 localStorage에서 로드
 if (typeof window !== 'undefined') {
   loadProjectsFromStorage();
   loadAuctionsFromStorage();
+  loadSupportsFromStorage();
+  loadBidsFromStorage();
 }
 
 // Mock 데이터 생성 함수들
@@ -82,6 +140,16 @@ const createMockUser = (id: number, overrides?: Partial<UserResponse>): UserResp
   phone: `010-${String(id).padStart(4, '0')}-${String(id * 2).padStart(4, '0')}`,
   ...overrides,
 });
+
+// 현재 로그인한 사용자 정보 가져오기
+function getCurrentUser(): UserResponse {
+  const savedUser = tokenStorage.getUser();
+  if (savedUser) {
+    return savedUser;
+  }
+  // 사용자 정보가 없으면 기본 Mock 사용자 반환 (비로그인 상태)
+  return createMockUser(1);
+}
 
 const createMockRewardTier = (
   id: number,
@@ -387,9 +455,10 @@ export const projectApi = {
     }
     
     const projectId = Date.now();
+    const currentUser = getCurrentUser();
     const result = createMockProject(projectId, {
       ...data,
-      creator: createMockUser(1),
+      creator: currentUser,
       createdAt: new Date().toISOString(),
     });
     
@@ -439,6 +508,95 @@ export const projectApi = {
     // 저장소에서 프로젝트 삭제
     projectStore.delete(id);
     saveProjectsToStorage(); // localStorage에도 반영
+  },
+
+  /**
+   * 프로젝트 후원하기
+   */
+  supportProject: async (data: SupportRequest): Promise<SupportResponse> => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    
+    // 프로젝트 가져오기
+    const project = projectStore.get(data.projectId);
+    if (!project) {
+      throw new Error('프로젝트를 찾을 수 없습니다');
+    }
+
+    // 프로젝트 상태 확인
+    if (project.status !== 'OPEN') {
+      throw new Error('진행 중인 프로젝트에만 후원할 수 있습니다');
+    }
+
+    // 리워드 티어 찾기
+    const rewardTier = project.rewardTiers.find(tier => tier.id === data.rewardTierId);
+    if (!rewardTier) {
+      throw new Error('리워드 티어를 찾을 수 없습니다');
+    }
+
+    // 후원 금액 검증
+    if (data.amount < rewardTier.price) {
+      throw new Error(`최소 후원 금액은 ${rewardTier.price.toLocaleString()}원입니다`);
+    }
+
+    // 리워드 티어 한정 수량 확인
+    if (rewardTier.limitQuantity !== null && rewardTier.soldQuantity >= rewardTier.limitQuantity) {
+      throw new Error('해당 리워드 티어의 한정 수량이 모두 소진되었습니다');
+    }
+
+    // 목표 금액 초과 확인 (선택사항 - 경고만)
+    if (project.currentAmount + data.amount > project.targetAmount) {
+      console.warn('후원 금액이 목표 금액을 초과합니다');
+    }
+
+    // 현재 로그인한 사용자 정보 가져오기
+    const currentUser = getCurrentUser();
+
+    // 후원 내역 생성
+    const supportId = Date.now();
+    const support: SupportResponse = {
+      id: supportId,
+      projectId: data.projectId,
+      projectTitle: project.title,
+      rewardTierId: data.rewardTierId,
+      rewardTierTitle: rewardTier.title,
+      amount: data.amount,
+      supporter: currentUser,
+      createdAt: new Date().toISOString(),
+    };
+
+    // 후원 내역 저장
+    supportStore.set(supportId, support);
+    saveSupportsToStorage();
+
+    // 프로젝트 업데이트: 현재 금액 증가, 리워드 티어 판매 수량 증가
+    const updatedProject = {
+      ...project,
+      currentAmount: project.currentAmount + data.amount,
+      rewardTiers: project.rewardTiers.map(tier =>
+        tier.id === data.rewardTierId
+          ? { ...tier, soldQuantity: tier.soldQuantity + 1 }
+          : tier
+      ),
+    };
+
+    projectStore.set(data.projectId, updatedProject);
+    saveProjectsToStorage();
+
+    return support;
+  },
+
+  /**
+   * 사용자의 후원 내역 조회
+   */
+  getMySupports: async (userId?: number): Promise<SupportResponse[]> => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    
+    // Mock: userId가 없으면 모든 후원 내역 반환 (실제로는 인증된 사용자 ID 사용)
+    const supports = Array.from(supportStore.values());
+    if (userId) {
+      return supports.filter(support => support.supporter.id === userId);
+    }
+    return supports.sort((a, b) => b.id - a.id); // 최신순
   },
 };
 
@@ -523,9 +681,10 @@ export const auctionApi = {
     }
     
     const auctionId = Date.now();
+    const currentUser = getCurrentUser();
     const result = createMockAuction(auctionId, {
       ...data,
-      seller: createMockUser(1),
+      seller: currentUser,
       winner: null,
     });
     
@@ -590,6 +749,64 @@ export const auctionApi = {
     const existingAuction = auctionStore.get(auctionId);
     const auction = existingAuction || createMockAuction(auctionId);
     
+    // 경매 상태 확인
+    if (auction.status !== 'RUNNING') {
+      throw new Error('진행 중인 경매에만 입찰할 수 있습니다');
+    }
+    
+    // 입찰 금액 검증
+    const minBidAmount = auction.currentPrice + auction.bidStep;
+    if (bidAmount < minBidAmount) {
+      throw new Error(`최소 입찰 금액은 ${minBidAmount.toLocaleString()}원입니다`);
+    }
+    
+    // 즉시 구매가가 있고 입찰 금액이 즉시 구매가 이상이면 즉시 구매 처리
+    if (auction.buyoutPrice && bidAmount >= auction.buyoutPrice) {
+      // 즉시 구매 처리
+      const currentUser = getCurrentUser();
+      const updatedAuction = {
+        ...auction,
+        currentPrice: auction.buyoutPrice,
+        status: 'ENDED' as const,
+        winner: currentUser,
+      };
+      auctionStore.set(auctionId, updatedAuction);
+      saveAuctionsToStorage();
+      
+      // 입찰 내역 저장
+      const bidId = Date.now();
+      const bid: BidResponse = {
+        id: bidId,
+        auctionId: auctionId,
+        auctionTitle: auction.title,
+        amount: auction.buyoutPrice,
+        bidder: currentUser,
+        createdAt: new Date().toISOString(),
+      };
+      bidStore.set(bidId, bid);
+      saveBidsToStorage();
+      
+      return updatedAuction;
+    }
+    
+    // 현재 로그인한 사용자 정보 가져오기
+    const currentUser = getCurrentUser();
+    
+    // 입찰 내역 생성
+    const bidId = Date.now();
+    const bid: BidResponse = {
+      id: bidId,
+      auctionId: auctionId,
+      auctionTitle: auction.title,
+      amount: bidAmount,
+      bidder: currentUser,
+      createdAt: new Date().toISOString(),
+    };
+    
+    // 입찰 내역 저장
+    bidStore.set(bidId, bid);
+    saveBidsToStorage();
+    
     const updatedAuction = {
       ...auction,
       currentPrice: bidAmount,
@@ -600,6 +817,20 @@ export const auctionApi = {
     saveAuctionsToStorage(); // localStorage에도 저장
     
     return updatedAuction;
+  },
+
+  /**
+   * 사용자의 입찰 내역 조회
+   */
+  getMyBids: async (userId?: number): Promise<BidResponse[]> => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    
+    // Mock: userId가 없으면 모든 입찰 내역 반환 (실제로는 인증된 사용자 ID 사용)
+    const bids = Array.from(bidStore.values());
+    if (userId) {
+      return bids.filter(bid => bid.bidder.id === userId);
+    }
+    return bids.sort((a, b) => b.id - a.id); // 최신순
   },
 };
 
@@ -707,6 +938,11 @@ export const authApi = {
    */
   getCurrentUser: async (): Promise<UserResponse> => {
     await new Promise((resolve) => setTimeout(resolve, 300));
-    return createMockUser(1);
+    const savedUser = tokenStorage.getUser();
+    if (savedUser) {
+      return savedUser;
+    }
+    // 토큰이 없으면 에러 발생 (실제로는 인증 필요)
+    throw new Error('로그인이 필요합니다');
   },
 };

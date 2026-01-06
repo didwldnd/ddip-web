@@ -95,7 +95,7 @@ export function Navigation() {
                   <Link href="/auction/create">경매 등록</Link>
                 </Button>
                 <Button asChild>
-                  <Link href="/project/create">프로젝트 시작하기</Link>
+                  <Link href="/project/create">프로젝트 등록</Link>
                 </Button>
               </div>
             </>
@@ -126,7 +126,7 @@ export function Navigation() {
               {isAuthenticated ? (
                 <>
                   <DropdownMenuItem asChild>
-                    <Link href="/project/create">프로젝트 시작하기</Link>
+                    <Link href="/project/create">프로젝트 등록</Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link href="/auction/create">경매 등록</Link>

@@ -1,0 +1,391 @@
+"use client"
+
+import { Navigation } from "@/src/components/navigation"
+import { Button } from "@/src/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card"
+import { Badge } from "@/src/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/src/components/ui/tabs"
+import { Avatar, AvatarFallback, AvatarImage } from "@/src/components/ui/avatar"
+import { Separator } from "@/src/components/ui/separator"
+import { Loader2, Calendar, TrendingUp, Gavel, Heart, Package } from "lucide-react"
+import { useState, useEffect } from "react"
+import { useAuth } from "@/src/contexts/auth-context"
+import { ProtectedRoute } from "@/src/components/protected-route"
+import { projectApi, auctionApi } from "@/src/services/api"
+import { ProjectResponse, AuctionResponse, SupportResponse, BidResponse } from "@/src/types/api"
+import Link from "next/link"
+import Image from "next/image"
+import { toast } from "sonner"
+
+export default function ProfilePage() {
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth()
+  const [myProjects, setMyProjects] = useState<ProjectResponse[]>([])
+  const [myAuctions, setMyAuctions] = useState<AuctionResponse[]>([])
+  const [mySupports, setMySupports] = useState<SupportResponse[]>([])
+  const [myBids, setMyBids] = useState<BidResponse[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      loadMyData()
+    }
+  }, [authLoading, isAuthenticated])
+
+  const loadMyData = async () => {
+    try {
+      setLoading(true)
+      
+      // 사용자 ID 확인
+      if (!user?.id) {
+        toast.error("사용자 정보를 불러올 수 없습니다")
+        return
+      }
+      
+      const userId = user.id
+      
+      // 등록한 프로젝트/경매는 현재 사용자가 생성자인 것만 필터링
+      const allProjects = await projectApi.getProjects()
+      const allAuctions = await auctionApi.getAuctions()
+      
+      const myProjectsList = allProjects.filter(p => p.creator.id === userId)
+      const myAuctionsList = allAuctions.filter(a => a.seller.id === userId)
+      
+      setMyProjects(myProjectsList)
+      setMyAuctions(myAuctionsList)
+      
+      // 후원/입찰 내역
+      const supports = await projectApi.getMySupports(userId)
+      const bids = await auctionApi.getMyBids(userId)
+      
+      setMySupports(supports)
+      setMyBids(bids)
+    } catch (error) {
+      console.error("데이터 로드 실패:", error)
+      toast.error("데이터를 불러오는데 실패했습니다")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (authLoading || loading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <main className="container mx-auto flex min-h-[60vh] items-center justify-center px-4 py-8">
+          <div className="flex flex-col items-center gap-4">
+            <Loader2 className="size-8 animate-spin text-primary" />
+            <p className="text-muted-foreground">로딩 중...</p>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <main className="container mx-auto px-4 py-8">
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-center text-muted-foreground">로그인이 필요합니다</p>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    )
+  }
+
+  return (
+    <ProtectedRoute>
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <main className="container mx-auto px-4 py-8">
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold">마이페이지</h1>
+            <p className="text-muted-foreground">내 프로젝트, 경매, 후원 내역을 관리하세요</p>
+          </div>
+
+          {/* 프로필 정보 */}
+          <Card className="mb-6">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <Avatar className="size-16">
+                  <AvatarImage src={user?.profileImageUrl || undefined} alt={user?.nickname || ""} />
+                  <AvatarFallback className="text-lg">
+                    {user?.nickname?.[0]?.toUpperCase() || "U"}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1">
+                  <h2 className="text-xl font-semibold">{user?.nickname}</h2>
+                  <p className="text-sm text-muted-foreground">{user?.email}</p>
+                  <p className="text-sm text-muted-foreground">{user?.name}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 탭 */}
+          <Tabs defaultValue="projects" className="w-full">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="projects">내 프로젝트</TabsTrigger>
+              <TabsTrigger value="auctions">내 경매</TabsTrigger>
+              <TabsTrigger value="supports">후원 내역</TabsTrigger>
+              <TabsTrigger value="bids">입찰 내역</TabsTrigger>
+            </TabsList>
+
+            {/* 내 프로젝트 */}
+            <TabsContent value="projects" className="mt-6">
+              <div className="space-y-4">
+                {myProjects.length === 0 ? (
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="text-center py-8">
+                        <Package className="mx-auto size-12 text-muted-foreground mb-4" />
+                        <p className="text-muted-foreground mb-4">등록한 프로젝트가 없습니다</p>
+                        <Button asChild>
+                          <Link href="/project/create">프로젝트 등록하기</Link>
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  myProjects.map((project) => (
+                    <Card key={project.id} className="hover:shadow-md transition-shadow">
+                      <CardContent className="pt-6">
+                        <Link href={`/project/${project.id}`} className="block">
+                          <div className="flex gap-4">
+                            <div className="relative size-24 flex-shrink-0 rounded-lg overflow-hidden bg-muted">
+                              <Image
+                                src={project.imageUrl || "/placeholder.svg"}
+                                alt={project.title}
+                                fill
+                                className="object-cover"
+                              />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex-1 min-w-0">
+                                  <h3 className="font-semibold text-lg mb-1 truncate">{project.title}</h3>
+                                  <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
+                                    {project.description}
+                                  </p>
+                                  <div className="flex items-center gap-4 text-sm">
+                                    <span className="text-muted-foreground">
+                                      목표: {project.targetAmount.toLocaleString()}원
+                                    </span>
+                                    <span className="text-primary font-semibold">
+                                      현재: {project.currentAmount.toLocaleString()}원
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                      {Math.round((project.currentAmount / project.targetAmount) * 100)}%
+                                    </span>
+                                  </div>
+                                </div>
+                                <Badge
+                                  variant={
+                                    project.status === "OPEN"
+                                      ? "default"
+                                      : project.status === "SUCCESS"
+                                      ? "default"
+                                      : "secondary"
+                                  }
+                                >
+                                  {project.status === "OPEN"
+                                    ? "진행 중"
+                                    : project.status === "SUCCESS"
+                                    ? "성공"
+                                    : project.status === "FAILED"
+                                    ? "실패"
+                                    : project.status === "CANCELED"
+                                    ? "취소됨"
+                                    : "초안"}
+                                </Badge>
+                              </div>
+                            </div>
+                          </div>
+                        </Link>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+
+            {/* 내 경매 */}
+            <TabsContent value="auctions" className="mt-6">
+              <div className="space-y-4">
+                {myAuctions.length === 0 ? (
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="text-center py-8">
+                        <Gavel className="mx-auto size-12 text-muted-foreground mb-4" />
+                        <p className="text-muted-foreground mb-4">등록한 경매가 없습니다</p>
+                        <Button asChild>
+                          <Link href="/auction/create">경매 등록하기</Link>
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  myAuctions.map((auction) => (
+                    <Card key={auction.id} className="hover:shadow-md transition-shadow">
+                      <CardContent className="pt-6">
+                        <Link href={`/auction/${auction.id}`} className="block">
+                          <div className="flex gap-4">
+                            <div className="relative size-24 flex-shrink-0 rounded-lg overflow-hidden bg-muted">
+                              <Image
+                                src={auction.imageUrl || "/placeholder.svg"}
+                                alt={auction.title}
+                                fill
+                                className="object-cover"
+                              />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex-1 min-w-0">
+                                  <h3 className="font-semibold text-lg mb-1 truncate">{auction.title}</h3>
+                                  <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
+                                    {auction.description}
+                                  </p>
+                                  <div className="flex items-center gap-4 text-sm">
+                                    <span className="text-muted-foreground">
+                                      시작가: {auction.startPrice.toLocaleString()}원
+                                    </span>
+                                    <span className="text-primary font-semibold">
+                                      현재가: {auction.currentPrice.toLocaleString()}원
+                                    </span>
+                                  </div>
+                                </div>
+                                <Badge
+                                  variant={
+                                    auction.status === "RUNNING"
+                                      ? "default"
+                                      : auction.status === "ENDED"
+                                      ? "default"
+                                      : "secondary"
+                                  }
+                                >
+                                  {auction.status === "SCHEDULED"
+                                    ? "예정"
+                                    : auction.status === "RUNNING"
+                                    ? "진행 중"
+                                    : auction.status === "ENDED"
+                                    ? "종료"
+                                    : "취소됨"}
+                                </Badge>
+                              </div>
+                            </div>
+                          </div>
+                        </Link>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+
+            {/* 후원 내역 */}
+            <TabsContent value="supports" className="mt-6">
+              <div className="space-y-4">
+                {mySupports.length === 0 ? (
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="text-center py-8">
+                        <Heart className="mx-auto size-12 text-muted-foreground mb-4" />
+                        <p className="text-muted-foreground">후원 내역이 없습니다</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  mySupports.map((support) => (
+                    <Card key={support.id}>
+                      <CardContent className="pt-6">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <h3 className="font-semibold mb-1">{support.projectTitle}</h3>
+                            <p className="text-sm text-muted-foreground mb-2">
+                              리워드: {support.rewardTierTitle}
+                            </p>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Calendar className="size-4" />
+                              <span>
+                                {new Date(support.createdAt).toLocaleDateString("ko-KR", {
+                                  year: "numeric",
+                                  month: "long",
+                                  day: "numeric",
+                                })}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-lg font-semibold text-primary">
+                              {support.amount.toLocaleString()}원
+                            </p>
+                            <Link href={`/project/${support.projectId}`}>
+                              <Button variant="link" size="sm" className="mt-2">
+                                프로젝트 보기
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+
+            {/* 입찰 내역 */}
+            <TabsContent value="bids" className="mt-6">
+              <div className="space-y-4">
+                {myBids.length === 0 ? (
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="text-center py-8">
+                        <Gavel className="mx-auto size-12 text-muted-foreground mb-4" />
+                        <p className="text-muted-foreground">입찰 내역이 없습니다</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  myBids.map((bid) => (
+                    <Card key={bid.id}>
+                      <CardContent className="pt-6">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <h3 className="font-semibold mb-1">{bid.auctionTitle}</h3>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                              <Calendar className="size-4" />
+                              <span>
+                                {new Date(bid.createdAt).toLocaleDateString("ko-KR", {
+                                  year: "numeric",
+                                  month: "long",
+                                  day: "numeric",
+                                })}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-lg font-semibold text-primary">
+                              {bid.amount.toLocaleString()}원
+                            </p>
+                            <Link href={`/auction/${bid.auctionId}`}>
+                              <Button variant="link" size="sm" className="mt-2">
+                                경매 보기
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
+        </main>
+      </div>
+    </ProtectedRoute>
+  )
+}

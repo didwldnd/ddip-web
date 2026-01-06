@@ -1,5 +1,7 @@
 // 토큰 저장/관리 유틸리티
 
+import { UserResponse } from '@/src/types/api'
+
 const ACCESS_TOKEN_KEY = 'ddip_access_token'
 const REFRESH_TOKEN_KEY = 'ddip_refresh_token'
 const USER_KEY = 'ddip_user'
@@ -38,15 +40,24 @@ export const tokenStorage = {
   },
 
   // User
-  getUser: (): any | null => {
+  getUser: (): UserResponse | null => {
     if (typeof window === 'undefined') return null
-    const userStr = localStorage.getItem(USER_KEY)
-    return userStr ? JSON.parse(userStr) : null
+    try {
+      const userStr = localStorage.getItem(USER_KEY)
+      return userStr ? (JSON.parse(userStr) as UserResponse) : null
+    } catch (error) {
+      console.error('사용자 정보 파싱 실패:', error)
+      return null
+    }
   },
 
-  setUser: (user: any): void => {
+  setUser: (user: UserResponse): void => {
     if (typeof window === 'undefined') return
-    localStorage.setItem(USER_KEY, JSON.stringify(user))
+    try {
+      localStorage.setItem(USER_KEY, JSON.stringify(user))
+    } catch (error) {
+      console.error('사용자 정보 저장 실패:', error)
+    }
   },
 
   removeUser: (): void => {
