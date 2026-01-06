@@ -69,3 +69,31 @@ export interface AuctionResponse {
   endAt: string;
   winner: UserResponse | null;
 }
+
+// 후원 관련 타입
+export interface SupportRequest {
+  projectId: number;
+  rewardTierId: number;
+  amount: number;
+}
+
+export interface SupportResponse {
+  id: number;
+  projectId: number;
+  projectTitle: string;
+  rewardTierId: number;
+  rewardTierTitle: string;
+  amount: number;
+  supporter: UserResponse;
+  createdAt: string;
+}
+
+// 입찰 관련 타입
+export interface BidResponse {
+  id: number;
+  auctionId: number;
+  auctionTitle: string;
+  amount: number;
+  bidder: UserResponse;
+  createdAt: string;
+}

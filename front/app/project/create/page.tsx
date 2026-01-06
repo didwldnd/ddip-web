@@ -151,7 +151,7 @@ export default function CreateProjectPage() {
           soldQuantity: 0,
         })),
         currentAmount: 0,
-        status: "DRAFT" as const,
+        status: "OPEN" as const, // 프로젝트 생성 시 바로 진행 중 상태로 설정
       }
 
       console.log("API 호출 전 데이터:", projectData)
