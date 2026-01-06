@@ -3,10 +3,10 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/src/components/ui/button"
-import { Menu, Search, User, LogOut } from "lucide-react"
+import { Menu, User, LogOut, Bell, Heart, House, TrendingUp, Sparkles } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/src/components/ui/dropdown-menu"
-import { Input } from "@/src/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/src/components/ui/avatar"
+import { Badge } from "@/src/components/ui/badge"
 import { useAuth } from "@/src/contexts/auth-context"
 import { toast } from "sonner"
 
@@ -36,35 +36,50 @@ export function Navigation() {
             <span className="text-xl font-bold">DDIP</span>
           </Link>
 
-          <div className="hidden items-center gap-6 md:flex">
-            <Link href="/" className="text-sm font-medium transition-colors hover:text-primary">
-              프로젝트
-            </Link>
-            <Link href="/" className="text-sm font-medium transition-colors hover:text-primary">
-              경매
-            </Link>
-            <Link href="/" className="text-sm font-medium transition-colors hover:text-primary">
-              둘러보기
-            </Link>
+          {/* 데스크톱 네비게이션 링크 */}
+          <div className="hidden items-center gap-1 md:flex">
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/" className="flex items-center gap-2">
+                <House className="size-4" />
+                홈
+              </Link>
+            </Button>
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/?sort=trending" className="flex items-center gap-2">
+                <TrendingUp className="size-4" />
+                인기
+              </Link>
+            </Button>
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/?sort=new" className="flex items-center gap-2">
+                <Sparkles className="size-4" />
+                신규
+              </Link>
+            </Button>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="hidden md:block">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input type="search" placeholder="프로젝트 검색..." className="w-[240px] pl-10" />
-            </div>
-          </div>
-
-          <Button variant="ghost" size="icon" className="md:hidden">
-            <Search className="size-5" />
-          </Button>
-
+        <div className="flex items-center gap-2">
           {isLoading ? (
             <div className="size-10" /> // 로딩 중 플레이스홀더
           ) : isAuthenticated ? (
             <>
+              {/* 알림 아이콘 */}
+              <Button variant="ghost" size="icon" className="relative">
+                <Bell className="size-5" />
+                <Badge className="absolute right-1 top-1 flex size-4 items-center justify-center p-0 text-[10px]">
+                  3
+                </Badge>
+              </Button>
+
+              {/* 찜 아이콘 */}
+              <Button variant="ghost" size="icon" asChild>
+                <Link href="/profile?tab=favorites">
+                  <Heart className="size-5" />
+                </Link>
+              </Button>
+
+              {/* 프로필 드롭다운 */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="rounded-full">
@@ -89,15 +104,6 @@ export function Navigation() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-
-              <div className="hidden items-center gap-2 md:flex">
-                <Button variant="outline" asChild>
-                  <Link href="/auction/create">경매 등록</Link>
-                </Button>
-                <Button asChild>
-                  <Link href="/project/create">프로젝트 등록</Link>
-                </Button>
-              </div>
             </>
           ) : (
             <>
@@ -113,6 +119,7 @@ export function Navigation() {
             </>
           )}
 
+          {/* 모바일 메뉴 */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="md:hidden">
@@ -120,22 +127,45 @@ export function Navigation() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem>프로젝트</DropdownMenuItem>
-              <DropdownMenuItem>경매</DropdownMenuItem>
-              <DropdownMenuItem>둘러보기</DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/" className="flex items-center gap-2">
+                  <House className="size-4" />
+                  홈
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/?sort=trending" className="flex items-center gap-2">
+                  <TrendingUp className="size-4" />
+                  인기
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/?sort=new" className="flex items-center gap-2">
+                  <Sparkles className="size-4" />
+                  신규
+                </Link>
+              </DropdownMenuItem>
               {isAuthenticated ? (
                 <>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
-                    <Link href="/project/create">프로젝트 등록</Link>
+                    <Link href="/profile" className="flex items-center gap-2">
+                      <User className="size-4" />
+                      마이페이지
+                    </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link href="/auction/create">경매 등록</Link>
+                    <Link href="/profile?tab=favorites" className="flex items-center gap-2">
+                      <Heart className="size-4" />
+                      찜한 항목
+                    </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleLogout}>로그아웃</DropdownMenuItem>
                 </>
               ) : (
                 <>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
                     <Link href="/login">로그인</Link>
                   </DropdownMenuItem>

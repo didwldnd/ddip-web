@@ -1,9 +1,15 @@
+"use client"
+
 import { Card, CardContent, CardFooter, CardHeader } from "@/src/components/ui/card"
 import { Badge } from "@/src/components/ui/badge"
 import { Progress } from "@/src/components/ui/progress"
-import { Clock, TrendingUp } from "lucide-react"
+import { Button } from "@/src/components/ui/button"
+import { Clock, TrendingUp, Heart } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
+import { useState, useEffect } from "react"
+import { isInWishlist, toggleWishlist } from "@/src/lib/wishlist"
+import { toast } from "sonner"
 
 interface ProjectCardProps {
   id: string
@@ -29,6 +35,26 @@ export function ProjectCard({
   daysLeft,
 }: ProjectCardProps) {
   const progress = (currentAmount / goalAmount) * 100
+  const [isFavorite, setIsFavorite] = useState(false)
+
+  useEffect(() => {
+    setIsFavorite(isInWishlist(Number(id), "project"))
+  }, [id])
+
+  const handleHeartClick = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    const projectId = Number(id)
+    const newState = toggleWishlist(projectId, "project")
+    setIsFavorite(newState)
+    
+    if (newState) {
+      toast.success("위시리스트에 추가되었습니다")
+    } else {
+      toast.info("위시리스트에서 제거되었습니다")
+    }
+  }
 
   return (
     <Link href={`/project/${id}`}>
@@ -40,7 +66,21 @@ export function ProjectCard({
             fill
             className="object-cover transition-transform duration-300 group-hover:scale-105"
           />
-          <Badge className="absolute right-3 top-3">{category}</Badge>
+          <div className="absolute right-3 top-3 flex gap-2">
+            <Badge>{category}</Badge>
+            <Button
+              variant="secondary"
+              size="icon"
+              className="size-8 rounded-full bg-background/80 backdrop-blur-sm hover:bg-background"
+              onClick={handleHeartClick}
+            >
+              <Heart
+                className={`size-4 transition-colors ${
+                  isFavorite ? "fill-red-500 text-red-500" : "text-muted-foreground"
+                }`}
+              />
+            </Button>
+          </div>
         </div>
 
         <CardHeader className="pb-3">

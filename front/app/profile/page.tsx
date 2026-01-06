@@ -9,21 +9,28 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/src/components/ui/avatar"
 import { Separator } from "@/src/components/ui/separator"
 import { Loader2, Calendar, TrendingUp, Gavel, Heart, Package } from "lucide-react"
 import { useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import { useAuth } from "@/src/contexts/auth-context"
 import { ProtectedRoute } from "@/src/components/protected-route"
 import { projectApi, auctionApi } from "@/src/services/api"
 import { ProjectResponse, AuctionResponse, SupportResponse, BidResponse } from "@/src/types/api"
+import { getWishlist } from "@/src/lib/wishlist"
 import Link from "next/link"
 import Image from "next/image"
 import { toast } from "sonner"
 
 export default function ProfilePage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth()
+  const searchParams = useSearchParams()
   const [myProjects, setMyProjects] = useState<ProjectResponse[]>([])
   const [myAuctions, setMyAuctions] = useState<AuctionResponse[]>([])
   const [mySupports, setMySupports] = useState<SupportResponse[]>([])
   const [myBids, setMyBids] = useState<BidResponse[]>([])
+  const [favoriteProjects, setFavoriteProjects] = useState<ProjectResponse[]>([])
+  const [favoriteAuctions, setFavoriteAuctions] = useState<AuctionResponse[]>([])
   const [loading, setLoading] = useState(true)
+  
+  const activeTab = searchParams.get("tab") === "favorites" ? "favorites" : undefined
 
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
@@ -59,6 +66,21 @@ export default function ProfilePage() {
       
       setMySupports(supports)
       setMyBids(bids)
+      
+      // 위시리스트 항목 로드
+      const wishlist = getWishlist()
+      const favoriteProjectIds = wishlist
+        .filter(item => item.type === "project")
+        .map(item => item.id)
+      const favoriteAuctionIds = wishlist
+        .filter(item => item.type === "auction")
+        .map(item => item.id)
+      
+      const favoriteProjectsList = allProjects.filter(p => favoriteProjectIds.includes(p.id))
+      const favoriteAuctionsList = allAuctions.filter(a => favoriteAuctionIds.includes(a.id))
+      
+      setFavoriteProjects(favoriteProjectsList)
+      setFavoriteAuctions(favoriteAuctionsList)
     } catch (error) {
       console.error("데이터 로드 실패:", error)
       toast.error("데이터를 불러오는데 실패했습니다")
@@ -126,12 +148,13 @@ export default function ProfilePage() {
           </Card>
 
           {/* 탭 */}
-          <Tabs defaultValue="projects" className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
+          <Tabs defaultValue={activeTab === "favorites" ? "favorites" : "projects"} className="w-full">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="projects">내 프로젝트</TabsTrigger>
               <TabsTrigger value="auctions">내 경매</TabsTrigger>
               <TabsTrigger value="supports">후원 내역</TabsTrigger>
               <TabsTrigger value="bids">입찰 내역</TabsTrigger>
+              <TabsTrigger value="favorites">찜한 항목</TabsTrigger>
             </TabsList>
 
             {/* 내 프로젝트 */}
@@ -333,6 +356,138 @@ export default function ProfilePage() {
                     </Card>
                   ))
                 )}
+              </div>
+            </TabsContent>
+
+            {/* 찜한 항목 */}
+            <TabsContent value="favorites" className="mt-6">
+              <div className="space-y-6">
+                {/* 찜한 프로젝트 */}
+                <div>
+                  <h3 className="mb-4 text-lg font-semibold flex items-center gap-2">
+                    <Heart className="size-5" />
+                    찜한 프로젝트 ({favoriteProjects.length})
+                  </h3>
+                  {favoriteProjects.length === 0 ? (
+                    <Card>
+                      <CardContent className="pt-6">
+                        <div className="text-center py-8">
+                          <Heart className="mx-auto size-12 text-muted-foreground mb-4" />
+                          <p className="text-muted-foreground">찜한 프로젝트가 없습니다</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {favoriteProjects.map((project) => {
+                        const endTime = new Date(project.endAt)
+                        const now = new Date()
+                        const daysLeft = isNaN(endTime.getTime())
+                          ? 0
+                          : Math.ceil((endTime.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+                        const backers = project.rewardTiers.reduce((sum, tier) => sum + tier.soldQuantity, 0)
+                        
+                        return (
+                          <Link key={project.id} href={`/project/${project.id}`}>
+                            <Card className="hover:shadow-md transition-shadow">
+                              <div className="relative aspect-video overflow-hidden bg-muted">
+                                <Image
+                                  src={project.imageUrl || "/placeholder.svg"}
+                                  alt={project.title}
+                                  fill
+                                  className="object-cover"
+                                />
+                              </div>
+                              <CardContent className="pt-4">
+                                <h4 className="font-semibold mb-2 line-clamp-2">{project.title}</h4>
+                                <div className="flex items-baseline gap-1 mb-2">
+                                  <span className="text-lg font-bold text-primary">
+                                    {project.currentAmount.toLocaleString()}
+                                  </span>
+                                  <span className="text-sm text-muted-foreground">원</span>
+                                </div>
+                                <div className="flex items-center justify-between text-sm text-muted-foreground">
+                                  <span>{backers}명 참여</span>
+                                  <span>{daysLeft > 0 ? `${daysLeft}일 남음` : "종료"}</span>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* 찜한 경매 */}
+                <div>
+                  <h3 className="mb-4 text-lg font-semibold flex items-center gap-2">
+                    <Heart className="size-5" />
+                    찜한 경매 ({favoriteAuctions.length})
+                  </h3>
+                  {favoriteAuctions.length === 0 ? (
+                    <Card>
+                      <CardContent className="pt-6">
+                        <div className="text-center py-8">
+                          <Heart className="mx-auto size-12 text-muted-foreground mb-4" />
+                          <p className="text-muted-foreground">찜한 경매가 없습니다</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {favoriteAuctions.map((auction) => {
+                        const endTime = new Date(auction.endAt)
+                        const now = new Date()
+                        const distance = isNaN(endTime.getTime()) ? 0 : endTime.getTime() - now.getTime()
+                        let timeLeft = "종료됨"
+                        if (distance > 0) {
+                          const days = Math.floor(distance / (1000 * 60 * 60 * 24))
+                          const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+                          if (days > 0) {
+                            timeLeft = `${days}일 ${hours}시간`
+                          } else if (hours > 0) {
+                            timeLeft = `${hours}시간`
+                          } else {
+                            timeLeft = "곧 종료"
+                          }
+                        }
+                        
+                        return (
+                          <Link key={auction.id} href={`/auction/${auction.id}`}>
+                            <Card className="hover:shadow-md transition-shadow">
+                              <div className="relative aspect-video overflow-hidden bg-muted">
+                                <Image
+                                  src={auction.imageUrl || "/placeholder.svg"}
+                                  alt={auction.title}
+                                  fill
+                                  className="object-cover"
+                                />
+                                {auction.status === "RUNNING" && (
+                                  <Badge className="absolute right-3 top-3 animate-pulse bg-destructive">
+                                    LIVE
+                                  </Badge>
+                                )}
+                              </div>
+                              <CardContent className="pt-4">
+                                <h4 className="font-semibold mb-2 line-clamp-2">{auction.title}</h4>
+                                <div className="flex items-baseline gap-1 mb-2">
+                                  <span className="text-lg font-bold text-secondary">
+                                    {auction.currentPrice.toLocaleString()}
+                                  </span>
+                                  <span className="text-sm text-muted-foreground">원</span>
+                                </div>
+                                <div className="text-sm text-muted-foreground">
+                                  {timeLeft}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </TabsContent>
 
