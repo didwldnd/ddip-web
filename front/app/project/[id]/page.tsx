@@ -32,6 +32,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [selectedRewardTier, setSelectedRewardTier] = useState<number | null>(null)
   const [supportAmount, setSupportAmount] = useState<string>("")
   const [isSupporting, setIsSupporting] = useState(false)
+  const [timeLeft, setTimeLeft] = useState<string>("")
 
   // 프로젝트 데이터 로드
   useEffect(() => {
@@ -369,7 +370,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                         <Clock className="size-4" />
                         <span className="text-xs">남은 시간</span>
                       </div>
-                      <p className="text-xl font-bold">{daysLeft > 0 ? `${daysLeft}일` : "종료"}</p>
+                      <p className="text-xl font-bold">{timeLeft || (daysLeft > 0 ? `${daysLeft}일` : "종료")}</p>
                     </div>
                   </div>
                 </CardContent>

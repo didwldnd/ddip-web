@@ -820,6 +820,20 @@ export const auctionApi = {
   },
 
   /**
+   * 특정 경매의 입찰 내역 조회
+   */
+  getBidsByAuction: async (auctionId: number): Promise<BidResponse[]> => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    
+    const bids = Array.from(bidStore.values());
+    const auctionBids = bids
+      .filter(bid => bid.auctionId === auctionId)
+      .sort((a, b) => b.id - a.id); // 최신순 (가장 최근 입찰이 위로)
+    
+    return auctionBids;
+  },
+
+  /**
    * 사용자의 입찰 내역 조회
    */
   getMyBids: async (userId?: number): Promise<BidResponse[]> => {

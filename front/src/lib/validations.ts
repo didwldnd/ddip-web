@@ -37,13 +37,24 @@ export const auctionCreateSchema = z.object({
   startAt: z.string().min(1, "시작일을 선택해주세요").refine((val) => {
     if (!val) return false
     const date = new Date(val)
-    return !isNaN(date.getTime())
-  }, "유효하지 않은 시작일입니다"),
+    if (isNaN(date.getTime())) return false
+    // 시작일은 현재 시간 이후여야 함
+    return date > new Date()
+  }, "경매 시작일은 현재 시간 이후여야 합니다"),
   endAt: z.string().min(1, "종료일을 선택해주세요").refine((val) => {
     if (!val) return false
     const date = new Date(val)
     return !isNaN(date.getTime())
   }, "유효하지 않은 종료일입니다"),
+}).refine((data) => {
+  // 종료일은 시작일 이후여야 함
+  const startDate = new Date(data.startAt)
+  const endDate = new Date(data.endAt)
+  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return true // 개별 검증에서 처리
+  return endDate > startDate
+}, {
+  message: "종료일은 시작일 이후여야 합니다",
+  path: ["endAt"], // endAt 필드에 에러 표시
 })
 
 export type ProjectCreateFormData = z.infer<typeof projectCreateSchema>

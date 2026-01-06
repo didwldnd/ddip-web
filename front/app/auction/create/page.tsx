@@ -25,6 +25,7 @@ export default function CreateAuctionPage() {
 
   // 오늘 날짜와 시간을 datetime-local 형식으로 가져오기
   const now = new Date()
+  // datetime-local 형식: YYYY-MM-DDTHH:mm (초 단위 제외)
   const today = now.toISOString().slice(0, 16)
 
   const {
@@ -95,6 +96,13 @@ export default function CreateAuctionPage() {
         return
       }
 
+      // 시작일이 과거인지 확인
+      const now = new Date()
+      if (startDateTimeObj < now) {
+        toast.error("경매 시작일은 현재 시간 이후여야 합니다")
+        return
+      }
+
       if (endDateTimeObj <= startDateTimeObj) {
         toast.error("종료일은 시작일 이후여야 합니다")
         return
@@ -113,13 +121,17 @@ export default function CreateAuctionPage() {
         return
       }
 
+      // 시작일이 현재 시간 이후면 SCHEDULED, 이미 지났으면 RUNNING
+      // (하지만 위에서 이미 과거 날짜는 차단했으므로 항상 SCHEDULED)
+      const status: "SCHEDULED" | "RUNNING" = startDateTimeObj <= now ? "RUNNING" : "SCHEDULED"
+
       const auctionData = {
         ...data,
         startAt: startDateTimeISO,
         endAt: endDateTimeISO,
         imageUrl,
         currentPrice: data.startPrice,
-        status: "SCHEDULED" as const,
+        status,
         winner: null,
         buyoutPrice: data.buyoutPrice ?? null, // undefined를 null로 변환
       }
@@ -290,9 +302,18 @@ export default function CreateAuctionPage() {
                     <Input
                       id="endAt"
                       type="datetime-local"
-                      min={startDateTime || today}
+                      min={startDateTime ? (() => {
+                        // 시작일이 설정되어 있으면 시작일보다 1분 이후만 선택 가능
+                        const startDate = new Date(startDateTime)
+                        const minEndDate = new Date(startDate.getTime() + 60000) // 1분 후
+                        return minEndDate.toISOString().slice(0, 16)
+                      })() : today}
+                      disabled={!startDateTime}
                       {...register("endAt")}
                     />
+                    {!startDateTime && (
+                      <p className="text-xs text-muted-foreground">시작일을 먼저 선택해주세요</p>
+                    )}
                     {errors.endAt && (
                       <Alert variant="destructive">
                         <AlertCircle className="size-4" />

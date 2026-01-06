@@ -11,20 +11,48 @@ import { Label } from "@/src/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/src/components/ui/tabs"
 import { AlertCircle, Clock, Gavel, Heart, Share2, MapPin, Loader2 } from "lucide-react"
 import Image from "next/image"
-import { useState, useEffect, use } from "react"
+import { useState, useEffect, use, useRef } from "react"
 import { Alert, AlertDescription } from "@/src/components/ui/alert"
 import { auctionApi } from "@/src/services/api"
 import { AuctionResponse } from "@/src/types/api"
 import { toast } from "sonner"
+import { useAuth } from "@/src/contexts/auth-context"
+import { BidResponse } from "@/src/types/api"
+import { maskUserId, formatRelativeTime } from "@/src/lib/user-utils"
+// 웹소켓 관련 (백엔드 준비되면 주석 해제)
+// import { useAuctionSocket } from "@/src/hooks/useAuctionSocket"
+// import { RealtimeBidList } from "@/src/components/realtime-bid-list"
+// import { BidPlacedEvent } from "@/src/types/websocket"
 
 export default function AuctionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
+  const { user } = useAuth()
   const [auction, setAuction] = useState<AuctionResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [bidAmount, setBidAmount] = useState(0)
   const [timeLeft, setTimeLeft] = useState("")
   const [isBidding, setIsBidding] = useState(false)
+  const [bidHistory, setBidHistory] = useState<BidResponse[]>([])
+  const [loadingBids, setLoadingBids] = useState(false)
+  
+  // 실시간 입찰 내역 (웹소켓 사용 시)
+  // const [realtimeBids, setRealtimeBids] = useState<BidPlacedEvent[]>([])
+  
+  // 웹소켓 연결 (백엔드 준비되면 주석 해제)
+  // const {
+  //   isConnected,
+  //   connectionStatus,
+  //   joinAuction,
+  //   leaveAuction,
+  //   placeBid: socketPlaceBid,
+  //   onBidPlaced,
+  //   onAuctionUpdated,
+  //   onBidFailed,
+  //   onAuctionEnded,
+  // } = useAuctionSocket()
+  
+  // const auctionIdRef = useRef<number | null>(null)
 
   // 경매 데이터 로드
   useEffect(() => {
@@ -36,9 +64,28 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
         if (isNaN(auctionId)) {
           throw new Error("유효하지 않은 경매 ID입니다")
         }
-        const data = await auctionApi.getAuction(auctionId)
+        let data = await auctionApi.getAuction(auctionId)
+        
+        // 시작일이 지났는데 SCHEDULED 상태면 RUNNING으로 업데이트
+        const now = new Date()
+        const startTime = new Date(data.startAt)
+        if (data.status === "SCHEDULED" && !isNaN(startTime.getTime()) && startTime <= now) {
+          // 경매가 시작되었으므로 상태 업데이트
+          data = await auctionApi.updateAuction(auctionId, {
+            status: "RUNNING" as const,
+          })
+        }
+        
         setAuction(data)
         setBidAmount(data.currentPrice + data.bidStep)
+        
+        // 입찰 내역도 함께 로드
+        try {
+          const bids = await auctionApi.getBidsByAuction(auctionId)
+          setBidHistory(bids)
+        } catch (err) {
+          console.error("입찰 내역 로드 실패:", err)
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "경매 정보를 불러오는 중 오류가 발생했습니다")
         toast.error("경매 정보를 불러오는데 실패했습니다")
@@ -54,7 +101,7 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
   useEffect(() => {
     if (!auction) return
 
-    const timer = setInterval(() => {
+    const updateTimeLeft = () => {
       const now = new Date().getTime()
       const endTimeObj = new Date(auction.endAt)
       
@@ -69,7 +116,6 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
       const distance = endTime - now
 
       if (distance < 0) {
-        clearInterval(timer)
         setTimeLeft("경매 종료")
         return
       }
@@ -79,14 +125,36 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
       const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60))
       const seconds = Math.floor((distance % (1000 * 60)) / 1000)
 
+      // 마지막 10분 미만일 때만 초 표시 (성능 최적화)
+      const totalMinutes = days * 24 * 60 + hours * 60 + minutes
+      const showSeconds = totalMinutes < 10
+
       if (days > 0) {
         setTimeLeft(`${days}일 ${hours}시간 ${minutes}분`)
       } else if (hours > 0) {
-        setTimeLeft(`${hours}시간 ${minutes}분 ${seconds}초`)
+        if (showSeconds) {
+          setTimeLeft(`${hours}시간 ${minutes}분 ${seconds}초`)
+        } else {
+          setTimeLeft(`${hours}시간 ${minutes}분`)
+        }
       } else {
-        setTimeLeft(`${minutes}분 ${seconds}초`)
+        if (showSeconds) {
+          setTimeLeft(`${minutes}분 ${seconds}초`)
+        } else {
+          setTimeLeft(`${minutes}분`)
+        }
       }
-    }, 1000)
+    }
+
+    // 초 표시가 필요할 때만 1초마다, 그 외에는 1분마다 업데이트
+    updateTimeLeft() // 즉시 실행
+    const now = new Date().getTime()
+    const endTime = new Date(auction.endAt).getTime()
+    const distance = endTime - now
+    const totalMinutes = Math.floor(distance / (1000 * 60))
+    const needsSecondUpdate = totalMinutes < 10
+
+    const timer = setInterval(updateTimeLeft, needsSecondUpdate ? 1000 : 60000)
 
     return () => clearInterval(timer)
   }, [auction])
@@ -114,16 +182,36 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
       return
     }
 
-    if (auction.status !== "RUNNING") {
+    // 실제 상태 확인 (시작일이 지났으면 RUNNING으로 간주)
+    const now = new Date()
+    const startTime = new Date(auction.startAt)
+    const hasStarted = !isNaN(startTime.getTime()) && startTime <= now
+    const canBid = auction.status === "RUNNING" || (auction.status === "SCHEDULED" && hasStarted)
+    
+    if (!canBid) {
       toast.error("진행 중인 경매에만 입찰할 수 있습니다")
       return
     }
 
     try {
       setIsBidding(true)
+      
+      // 웹소켓 사용 시 (백엔드 준비되면 주석 해제)
+      // if (isConnected) {
+      //   socketPlaceBid(auctionId, bidAmount)
+      //   // 웹소켓 이벤트로 결과를 받음 (onBidPlaced, onBidFailed)
+      //   return
+      // }
+      
+      // Mock API 사용 (웹소켓 미사용 시)
       const updatedAuction = await auctionApi.placeBid(auctionId, bidAmount)
       setAuction(updatedAuction)
       setBidAmount(updatedAuction.currentPrice + updatedAuction.bidStep)
+      
+      // 입찰 내역 새로고침
+      const bids = await auctionApi.getBidsByAuction(auctionId)
+      setBidHistory(bids)
+      
       toast.success(`입찰이 완료되었습니다! 현재 입찰가: ${updatedAuction.currentPrice.toLocaleString()}원`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "입찰 중 오류가 발생했습니다")
@@ -162,8 +250,6 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
     )
   }
 
-  const isLive = auction.status === "RUNNING"
-  
   // 날짜 파싱 (안전하게)
   const endTime = new Date(auction.endAt)
   const startTime = new Date(auction.startAt)
@@ -183,6 +269,21 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
       </div>
     )
   }
+
+  // 시작일이 지났는지 확인하여 실제 상태 결정
+  const now = new Date()
+  const hasStarted = startTime <= now
+  const hasEnded = endTime <= now
+  
+  // 실제 경매 상태 계산 (시작일이 지났으면 RUNNING, 종료일이 지났으면 ENDED)
+  let actualStatus = auction.status
+  if (hasEnded && auction.status !== "ENDED" && auction.status !== "CANCELED") {
+    actualStatus = "ENDED" as const
+  } else if (hasStarted && auction.status === "SCHEDULED") {
+    actualStatus = "RUNNING" as const
+  }
+  
+  const isLive = actualStatus === "RUNNING"
 
   return (
     <div className="min-h-screen bg-background">
@@ -261,6 +362,8 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
               <TabsList className="w-full justify-start">
                 <TabsTrigger value="description">상품 설명</TabsTrigger>
                 <TabsTrigger value="info">경매 정보</TabsTrigger>
+                {/* 웹소켓 사용 시 실시간 입찰 내역 탭 추가 (백엔드 준비되면 주석 해제) */}
+                {/* <TabsTrigger value="bids">실시간 입찰 내역</TabsTrigger> */}
               </TabsList>
 
               <TabsContent value="description" className="mt-6">
@@ -319,6 +422,11 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                   </CardContent>
                 </Card>
               </TabsContent>
+
+              {/* 실시간 입찰 내역 탭 (웹소켓 사용 시, 백엔드 준비되면 주석 해제) */}
+              {/* <TabsContent value="bids" className="mt-6">
+                <RealtimeBidList bids={realtimeBids} maxItems={20} />
+              </TabsContent> */}
             </Tabs>
           </div>
 
@@ -330,7 +438,7 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                 <CardHeader className="bg-primary/5">
                   <CardTitle className="flex items-center gap-2 text-xl">
                     <Clock className="size-5" />
-                    {isLive ? "경매 진행 중" : auction.status === "SCHEDULED" ? "경매 대기" : "경매 종료"}
+                    {isLive ? "경매 진행 중" : actualStatus === "SCHEDULED" ? "경매 대기" : "경매 종료"}
                   </CardTitle>
                   <CardDescription className="text-base font-semibold text-foreground">{timeLeft || "계산 중..."} 남음</CardDescription>
                 </CardHeader>
@@ -434,9 +542,9 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                     <Alert>
                       <AlertCircle className="size-4" />
                       <AlertDescription>
-                        {auction.status === "ENDED" 
+                        {actualStatus === "ENDED" 
                           ? "이 경매는 종료되었습니다" 
-                          : auction.status === "CANCELED"
+                          : actualStatus === "CANCELED"
                           ? "이 경매는 취소되었습니다"
                           : "경매가 아직 시작되지 않았습니다"}
                       </AlertDescription>
@@ -488,6 +596,91 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                       }
                     </span>
                   </div>
+                </CardContent>
+              </Card>
+
+              {/* 입찰 내역 */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Gavel className="size-5" />
+                    입찰 내역
+                    {bidHistory.length > 0 && (
+                      <Badge variant="secondary" className="ml-auto">
+                        {bidHistory.length}건
+                      </Badge>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {loadingBids ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : bidHistory.length === 0 ? (
+                    <div className="py-8 text-center text-sm text-muted-foreground">
+                      아직 입찰이 없습니다
+                    </div>
+                  ) : (
+                    <div className="max-h-[400px] space-y-2 overflow-y-auto">
+                      {bidHistory.map((bid, index) => {
+                        const isMyBid = user?.id === bid.bidder.id
+                        const isHighest = index === 0 && bid.amount === auction.currentPrice
+                        
+                        return (
+                          <div
+                            key={bid.id}
+                            className={`flex items-center justify-between rounded-lg border p-3 transition-colors ${
+                              isMyBid
+                                ? "border-primary bg-primary/5"
+                                : isHighest
+                                ? "border-secondary bg-secondary/5"
+                                : "border-border bg-card"
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <Avatar className="size-8">
+                                <AvatarImage src={bid.bidder.profileImageUrl || undefined} />
+                                <AvatarFallback>
+                                  {bid.bidder.nickname?.[0] || bid.bidder.name?.[0] || "?"}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium">
+                                    {maskUserId(bid.bidder)}
+                                  </span>
+                                  {isMyBid && (
+                                    <Badge variant="outline" className="text-xs">
+                                      내 입찰
+                                    </Badge>
+                                  )}
+                                  {isHighest && (
+                                    <Badge variant="secondary" className="text-xs">
+                                      최고가
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {formatRelativeTime(bid.createdAt)}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-semibold text-lg">
+                                {bid.amount.toLocaleString()}원
+                              </div>
+                              {index > 0 && (
+                                <div className="text-xs text-muted-foreground">
+                                  +{(bid.amount - bidHistory[index - 1].amount).toLocaleString()}원
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
