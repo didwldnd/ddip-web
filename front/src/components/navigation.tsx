@@ -31,9 +31,9 @@ export function Navigation() {
         <div className="flex items-center gap-6">
           <Link href="/" className="flex items-center gap-2">
             <div className="flex size-8 items-center justify-center rounded-lg bg-primary">
-              <span className="text-lg font-bold text-primary-foreground">F</span>
+              <span className="text-lg font-bold text-primary-foreground">D</span>
             </div>
-            <span className="text-xl font-bold">FundIt</span>
+            <span className="text-xl font-bold">DDIP</span>
           </Link>
 
           <div className="hidden items-center gap-6 md:flex">
