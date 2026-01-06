@@ -84,7 +84,11 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
 
   const handleQuickBid = (increment: number) => {
     if (!auction) return
-    setBidAmount(auction.currentPrice + increment)
+    setBidAmount((prev) => {
+      const newAmount = prev + increment
+      const minBid = auction.currentPrice + auction.bidStep
+      return Math.max(newAmount, minBid)
+    })
   }
 
   const handleBid = async () => {
@@ -328,28 +332,28 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                           variant="outline"
                           size="sm"
                           className="flex-1 bg-transparent"
-                          onClick={() => handleQuickBid(auction.bidStep)}
-                          disabled={isBidding}
-                        >
-                          +{(auction.bidStep / 10000).toFixed(0)}만
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1 bg-transparent"
                           onClick={() => handleQuickBid(auction.bidStep * 2)}
                           disabled={isBidding}
                         >
-                          +{((auction.bidStep * 2) / 10000).toFixed(0)}만
+                          +{auction.bidStep * 2 >= 10000 ? `${(auction.bidStep * 2 / 10000).toFixed(0)}만` : `${auction.bidStep * 2 / 1000}천`}
                         </Button>
                         <Button
                           variant="outline"
                           size="sm"
                           className="flex-1 bg-transparent"
-                          onClick={() => handleQuickBid(auction.bidStep * 5)}
+                          onClick={() => handleQuickBid(auction.bidStep * 4)}
                           disabled={isBidding}
                         >
-                          +{((auction.bidStep * 5) / 10000).toFixed(0)}만
+                          +{auction.bidStep * 4 >= 10000 ? `${(auction.bidStep * 4 / 10000).toFixed(0)}만` : `${auction.bidStep * 4 / 1000}천`}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 bg-transparent"
+                          onClick={() => handleQuickBid(auction.bidStep * 10)}
+                          disabled={isBidding}
+                        >
+                          +{auction.bidStep * 10 >= 10000 ? `${(auction.bidStep * 10 / 10000).toFixed(0)}만` : `${auction.bidStep * 10 / 1000}천`}
                         </Button>
                       </div>
 
