@@ -121,6 +121,7 @@ export default function CreateAuctionPage() {
         currentPrice: data.startPrice,
         status: "SCHEDULED" as const,
         winner: null,
+        buyoutPrice: data.buyoutPrice ?? null, // undefined를 null로 변환
       }
 
       const createdAuction = await auctionApi.createAuction(auctionData)
