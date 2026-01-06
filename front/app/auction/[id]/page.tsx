@@ -19,6 +19,7 @@ import { toast } from "sonner"
 import { useAuth } from "@/src/contexts/auth-context"
 import { BidResponse } from "@/src/types/api"
 import { maskUserId, formatRelativeTime } from "@/src/lib/user-utils"
+import { formatIncrement } from "@/src/lib/format-amount"
 // 웹소켓 관련 (백엔드 준비되면 주석 해제)
 // import { useAuctionSocket } from "@/src/hooks/useAuctionSocket"
 // import { RealtimeBidList } from "@/src/components/realtime-bid-list"
@@ -488,7 +489,7 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                           onClick={() => handleQuickBid(auction.bidStep * 2)}
                           disabled={isBidding}
                         >
-                          +{auction.bidStep * 2 >= 10000 ? `${(auction.bidStep * 2 / 10000).toFixed(0)}만` : `${auction.bidStep * 2 / 1000}천`}
+                          {formatIncrement(auction.bidStep * 2)}
                         </Button>
                         <Button
                           variant="outline"
@@ -497,7 +498,7 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                           onClick={() => handleQuickBid(auction.bidStep * 4)}
                           disabled={isBidding}
                         >
-                          +{auction.bidStep * 4 >= 10000 ? `${(auction.bidStep * 4 / 10000).toFixed(0)}만` : `${auction.bidStep * 4 / 1000}천`}
+                          {formatIncrement(auction.bidStep * 4)}
                         </Button>
                         <Button
                           variant="outline"
@@ -506,7 +507,7 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                           onClick={() => handleQuickBid(auction.bidStep * 10)}
                           disabled={isBidding}
                         >
-                          +{auction.bidStep * 10 >= 10000 ? `${(auction.bidStep * 10 / 10000).toFixed(0)}만` : `${auction.bidStep * 10 / 1000}천`}
+                          {formatIncrement(auction.bidStep * 10)}
                         </Button>
                       </div>
 
