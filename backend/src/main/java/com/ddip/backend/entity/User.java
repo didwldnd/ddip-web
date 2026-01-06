@@ -1,16 +1,14 @@
 package com.ddip.backend.entity;
 
-import com.ddip.backend.dto.SocialUserRequestDto;
-import com.ddip.backend.dto.enums.BankType;
-import com.ddip.backend.dto.enums.Role;
+import com.ddip.backend.dto.user.UserRequestDto;
+import com.ddip.backend.dto.user.UserUpdateRequestDto;
+import com.ddip.backend.enums.BankType;
+import com.ddip.backend.enums.Role;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-
-import java.util.ArrayList;
-import java.util.List;
 
 @Entity
 @Getter
@@ -31,7 +29,7 @@ public class User extends BaseTimeEntity{
     @Column(name = "password")
     private String password;
 
-    @Column(name = "username", nullable = false)
+    @Column(name = "name", nullable = false)
     private String username;
 
     @Column(name = "nickname", nullable = false)
@@ -44,29 +42,45 @@ public class User extends BaseTimeEntity{
     @Enumerated(EnumType.STRING)
     private Role role;
 
-    @Column(name = "bank_type")
+    @Column(name = "bank_type", nullable = false)
     @Enumerated(EnumType.STRING)
     private BankType bankType;
 
-    @Column(name = "account")
+    @Column(name = "account", nullable = false)
     private String account;
 
-    @Column(name = "account_holder")
+    @Column(name = "account_holder", nullable = false)
     private String accountHolder;
 
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
 
-    @OneToMany(mappedBy = "user", fetch = FetchType.LAZY, orphanRemoval = true)
-    private List<UserAddress> userAddresses = new ArrayList<>();
-
-    public static User from(SocialUserRequestDto socialUserRequestDto) {
+    public static User from(UserRequestDto request) {
         return User.builder()
-                .email(socialUserRequestDto.getEmail())
-//                .provider(socialUserRequestDto.getProvider())
-                .nickname(null)
-                .username(socialUserRequestDto.getName())
-                .role(socialUserRequestDto.getRole())
+                .email(request.getEmail())
+                .password(request.getPassword())
+                .username(request.getUsername())
+                .nickname(request.getNickname())
+                .phoneNumber(request.getPhoneNumber())
+                .role(Role.USER)
+                .bankType(request.getBankType())
+                .account(request.getAccount())
+                .accountHolder(request.getAccountHolder())
                 .build();
+    }
+
+    public void update(UserUpdateRequestDto updateRequest) {
+        this.email = updateRequest.getEmail();
+        this.password = updateRequest.getPassword();
+        this.username = updateRequest.getUsername();
+        this.nickname = updateRequest.getNickname();
+        this.phoneNumber = updateRequest.getPhoneNumber();
+        this.account = updateRequest.getAccount();
+        this.accountHolder = updateRequest.getAccountHolder();
+        this.bankType = updateRequest.getBankType();
+    }
+
+    public void updatePassword(String password) {
+        this.password = password;
     }
 }
