@@ -2,9 +2,9 @@ import { z } from "zod"
 
 // 프로젝트 등록 스키마
 export const projectCreateSchema = z.object({
-  title: z.string().min(1, "제목을 입력해주세요").max(100, "제목은 100자 이하여야 합니다"),
-  description: z.string().min(10, "설명은 최소 10자 이상이어야 합니다"),
-  targetAmount: z.number().min(10000, "목표 금액은 최소 10,000원 이상이어야 합니다"),
+  title: z.string().min(1, "제목을 입력해주세요").max(200, "제목은 200자 이하여야 합니다"),
+  description: z.string().min(1, "설명을 입력해주세요"),
+  targetAmount: z.number().min(1, "목표 금액은 최소 1원 이상이어야 합니다"),
   startAt: z.string().min(1, "시작일을 선택해주세요").refine((val) => {
     if (!val) return false
     const date = new Date(val.includes("T") ? val : `${val}T00:00:00`)
@@ -18,13 +18,16 @@ export const projectCreateSchema = z.object({
   rewardTiers: z
     .array(
       z.object({
-        title: z.string().min(1, "리워드 제목을 입력해주세요"),
+        title: z.string().min(1, "리워드 제목을 입력해주세요").max(200, "리워드 제목은 200자 이하여야 합니다"),
         description: z.string().min(1, "리워드 설명을 입력해주세요"),
-        price: z.number().min(1000, "가격은 최소 1,000원 이상이어야 합니다"),
+        price: z.number().min(1, "가격은 최소 1원 이상이어야 합니다"),
         limitQuantity: z.number().min(1).nullable().optional(),
       })
     )
     .min(1, "최소 1개 이상의 리워드를 추가해주세요"),
+  categoryPath: z.string().max(100, "카테고리 경로는 100자 이하여야 합니다").optional().nullable(),
+  tags: z.string().max(500, "태그는 500자 이하여야 합니다").optional().nullable(),
+  summary: z.string().max(200, "요약은 200자 이하여야 합니다").optional().nullable(),
 })
 
 // 경매 등록 스키마
