@@ -441,7 +441,9 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                     <Clock className="size-5" />
                     {isLive ? "경매 진행 중" : actualStatus === "SCHEDULED" ? "경매 대기" : "경매 종료"}
                   </CardTitle>
-                  <CardDescription className="text-base font-semibold text-foreground">{timeLeft || "계산 중..."} 남음</CardDescription>
+                  {actualStatus !== "ENDED" && actualStatus !== "CANCELED" && (
+                    <CardDescription className="text-base font-semibold text-foreground">{timeLeft || "계산 중..."} 남음</CardDescription>
+                  )}
                 </CardHeader>
 
                 <CardContent className="space-y-4 pt-6">
