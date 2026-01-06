@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "FundIt - 크라우드펀딩 & 경매 플랫폼",
+  title: "DDIP - 크라우드펀딩 & 경매 플랫폼",
   description: "혁신적인 프로젝트에 투자하고 특별한 제품을 경매로 만나보세요",
   generator: "v0.app",
   icons: {

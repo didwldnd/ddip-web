@@ -160,7 +160,7 @@ export default function HomePage() {
         <div className="container mx-auto px-4">
           <div className="grid gap-8 md:grid-cols-4">
             <div>
-              <h3 className="mb-4 font-bold">FundIt</h3>
+              <h3 className="mb-4 font-bold">DDIP</h3>
               <p className="text-sm text-muted-foreground">혁신적인 아이디어와 특별한 제품을 만나는 공간</p>
             </div>
             <div>
@@ -189,7 +189,7 @@ export default function HomePage() {
             </div>
           </div>
           <div className="mt-8 border-t pt-8 text-center text-sm text-muted-foreground">
-            © 2026 FundIt. All rights reserved.
+            © 2026 DDIP. All rights reserved.
           </div>
         </div>
       </footer>
