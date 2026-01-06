@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/src/components/ui/ta
 import { Avatar, AvatarFallback, AvatarImage } from "@/src/components/ui/avatar"
 import { Separator } from "@/src/components/ui/separator"
 import { Loader2, Calendar, TrendingUp, Gavel, Heart, Package } from "lucide-react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { useAuth } from "@/src/contexts/auth-context"
 import { ProtectedRoute } from "@/src/components/protected-route"
@@ -19,7 +19,7 @@ import Link from "next/link"
 import Image from "next/image"
 import { toast } from "sonner"
 
-export default function ProfilePage() {
+function ProfileContent() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth()
   const searchParams = useSearchParams()
   const [myProjects, setMyProjects] = useState<ProjectResponse[]>([])
@@ -542,5 +542,23 @@ export default function ProfilePage() {
         </main>
       </div>
     </ProtectedRoute>
+  )
+}
+
+export default function ProfilePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <main className="container mx-auto flex min-h-[60vh] items-center justify-center px-4 py-8">
+          <div className="flex flex-col items-center gap-4">
+            <Loader2 className="size-8 animate-spin text-primary" />
+            <p className="text-muted-foreground">로딩 중...</p>
+          </div>
+        </main>
+      </div>
+    }>
+      <ProfileContent />
+    </Suspense>
   )
 }
