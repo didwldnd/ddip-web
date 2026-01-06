@@ -8,6 +8,26 @@ export interface UserResponse {
   phone: string | null;
 }
 
+// 인증 관련 타입
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  name: string;
+  nickname: string;
+  phone?: string;
+}
+
+export interface AuthResponse {
+  accessToken: string;
+  refreshToken?: string;
+  user: UserResponse;
+}
+
 // 프로젝트 관련 타입
 export interface RewardTierResponse {
   id: number;
