@@ -56,7 +56,16 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
 
     const timer = setInterval(() => {
       const now = new Date().getTime()
-      const endTime = new Date(auction.endAt).getTime()
+      const endTimeObj = new Date(auction.endAt)
+      
+      // Invalid Date 체크
+      if (isNaN(endTimeObj.getTime())) {
+        console.error("Invalid endAt date:", auction.endAt)
+        setTimeLeft("날짜 오류")
+        return
+      }
+      
+      const endTime = endTimeObj.getTime()
       const distance = endTime - now
 
       if (distance < 0) {
@@ -154,8 +163,26 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
   }
 
   const isLive = auction.status === "RUNNING"
+  
+  // 날짜 파싱 (안전하게)
   const endTime = new Date(auction.endAt)
   const startTime = new Date(auction.startAt)
+  
+  // Invalid Date 체크
+  if (isNaN(endTime.getTime()) || isNaN(startTime.getTime())) {
+    console.error("Invalid date in auction:", { startAt: auction.startAt, endAt: auction.endAt })
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <main className="container mx-auto px-4 py-8">
+          <Alert variant="destructive">
+            <AlertCircle className="size-4" />
+            <AlertDescription>경매 날짜 정보가 유효하지 않습니다</AlertDescription>
+          </Alert>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -264,11 +291,29 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                       )}
                       <div className="flex items-center justify-between border-b pb-3">
                         <span className="font-medium">경매 시작</span>
-                        <span className="text-muted-foreground">{startTime.toLocaleDateString("ko-KR")}</span>
+                        <span className="text-muted-foreground">
+                          {isNaN(startTime.getTime()) 
+                            ? "날짜 오류" 
+                            : startTime.toLocaleDateString("ko-KR", { 
+                                year: "numeric", 
+                                month: "long", 
+                                day: "numeric" 
+                              })
+                          }
+                        </span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="font-medium">경매 종료</span>
-                        <span className="text-muted-foreground">{endTime.toLocaleDateString("ko-KR")}</span>
+                        <span className="text-muted-foreground">
+                          {isNaN(endTime.getTime()) 
+                            ? "날짜 오류" 
+                            : endTime.toLocaleDateString("ko-KR", { 
+                                year: "numeric", 
+                                month: "long", 
+                                day: "numeric" 
+                              })
+                          }
+                        </span>
                       </div>
                     </div>
                   </CardContent>
@@ -419,11 +464,29 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                   )}
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">경매 시작</span>
-                    <span className="font-semibold">{startTime.toLocaleDateString("ko-KR")}</span>
+                    <span className="font-semibold">
+                      {isNaN(startTime.getTime()) 
+                        ? "날짜 오류" 
+                        : startTime.toLocaleDateString("ko-KR", { 
+                            year: "numeric", 
+                            month: "long", 
+                            day: "numeric" 
+                          })
+                      }
+                    </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">경매 종료</span>
-                    <span className="font-semibold">{endTime.toLocaleDateString("ko-KR")}</span>
+                    <span className="font-semibold">
+                      {isNaN(endTime.getTime()) 
+                        ? "날짜 오류" 
+                        : endTime.toLocaleDateString("ko-KR", { 
+                            year: "numeric", 
+                            month: "long", 
+                            day: "numeric" 
+                          })
+                      }
+                    </span>
                   </div>
                 </CardContent>
               </Card>

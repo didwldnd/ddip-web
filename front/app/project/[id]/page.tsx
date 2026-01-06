@@ -33,9 +33,33 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         if (isNaN(projectId)) {
           throw new Error("유효하지 않은 프로젝트 ID입니다")
         }
+        console.log("프로젝트 로드 시작:", projectId)
         const data = await projectApi.getProject(projectId)
+        console.log("프로젝트 로드 성공:", {
+          id: data.id,
+          startAt: data.startAt,
+          endAt: data.endAt,
+          startAtType: typeof data.startAt,
+          endAtType: typeof data.endAt
+        })
+        
+        // 날짜 유효성 사전 검사
+        if (data.startAt && typeof data.startAt === 'string') {
+          const testStart = new Date(data.startAt)
+          if (isNaN(testStart.getTime())) {
+            console.error("로드된 프로젝트의 startAt이 유효하지 않음:", data.startAt)
+          }
+        }
+        if (data.endAt && typeof data.endAt === 'string') {
+          const testEnd = new Date(data.endAt)
+          if (isNaN(testEnd.getTime())) {
+            console.error("로드된 프로젝트의 endAt이 유효하지 않음:", data.endAt)
+          }
+        }
+        
         setProject(data)
       } catch (err) {
+        console.error("프로젝트 로드 에러:", err)
         setError(err instanceof Error ? err.message : "프로젝트 정보를 불러오는 중 오류가 발생했습니다")
         toast.error("프로젝트 정보를 불러오는데 실패했습니다")
       } finally {
@@ -76,11 +100,63 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     )
   }
 
-  const progress = (project.currentAmount / project.targetAmount) * 100
-  const startTime = new Date(project.startAt)
-  const endTime = new Date(project.endAt)
-  const now = new Date()
-  const daysLeft = Math.ceil((endTime.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+  // 날짜 파싱을 try-catch로 감싸서 에러 처리
+  let progress: number
+  let startTime: Date
+  let endTime: Date
+  let daysLeft: number
+  
+  try {
+    progress = (project.currentAmount / project.targetAmount) * 100
+    
+    // 날짜 파싱 (안전하게)
+    // 먼저 날짜 문자열 유효성 검사
+    if (!project.startAt || !project.endAt || typeof project.startAt !== 'string' || typeof project.endAt !== 'string') {
+      console.error("Missing or invalid date strings:", { startAt: project.startAt, endAt: project.endAt })
+      throw new Error("프로젝트 날짜 정보가 없습니다")
+    }
+
+    console.log("날짜 파싱 시작:", { startAt: project.startAt, endAt: project.endAt })
+    
+    startTime = new Date(project.startAt)
+    endTime = new Date(project.endAt)
+    const now = new Date()
+    
+    console.log("날짜 파싱 결과:", {
+      startTime: startTime.toString(),
+      endTime: endTime.toString(),
+      startTimeValid: !isNaN(startTime.getTime()),
+      endTimeValid: !isNaN(endTime.getTime())
+    })
+    
+    // Invalid Date 체크
+    if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
+      console.error("Invalid date in project:", { 
+        startAt: project.startAt, 
+        endAt: project.endAt,
+        startTime: startTime.toString(),
+        endTime: endTime.toString()
+      })
+      throw new Error("프로젝트 날짜 정보가 유효하지 않습니다")
+    }
+    
+    daysLeft = Math.ceil((endTime.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+  } catch (dateError) {
+    console.error("날짜 파싱 에러:", dateError)
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <main className="container mx-auto px-4 py-8">
+          <Alert variant="destructive">
+            <AlertCircle className="size-4" />
+            <AlertDescription>
+              {dateError instanceof Error ? dateError.message : "프로젝트 날짜 정보 처리 중 오류가 발생했습니다"}
+            </AlertDescription>
+          </Alert>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -233,11 +309,29 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 <CardContent className="space-y-3 pt-6 text-sm">
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">프로젝트 시작</span>
-                    <span className="font-semibold">{startTime.toLocaleDateString("ko-KR")}</span>
+                    <span className="font-semibold">
+                      {isNaN(startTime.getTime()) 
+                        ? "날짜 오류" 
+                        : startTime.toLocaleDateString("ko-KR", { 
+                            year: "numeric", 
+                            month: "long", 
+                            day: "numeric" 
+                          })
+                      }
+                    </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">프로젝트 종료</span>
-                    <span className="font-semibold">{endTime.toLocaleDateString("ko-KR")}</span>
+                    <span className="font-semibold">
+                      {isNaN(endTime.getTime()) 
+                        ? "날짜 오류" 
+                        : endTime.toLocaleDateString("ko-KR", { 
+                            year: "numeric", 
+                            month: "long", 
+                            day: "numeric" 
+                          })
+                      }
+                    </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">상태</span>
