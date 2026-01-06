@@ -19,9 +19,8 @@ import Link from "next/link"
 import Image from "next/image"
 import { toast } from "sonner"
 
-function ProfileContent() {
+function ProfileTabs({ defaultTab }: { defaultTab: string }) {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth()
-  const searchParams = useSearchParams()
   const [myProjects, setMyProjects] = useState<ProjectResponse[]>([])
   const [myAuctions, setMyAuctions] = useState<AuctionResponse[]>([])
   const [mySupports, setMySupports] = useState<SupportResponse[]>([])
@@ -29,8 +28,6 @@ function ProfileContent() {
   const [favoriteProjects, setFavoriteProjects] = useState<ProjectResponse[]>([])
   const [favoriteAuctions, setFavoriteAuctions] = useState<AuctionResponse[]>([])
   const [loading, setLoading] = useState(true)
-  
-  const activeTab = searchParams.get("tab") === "favorites" ? "favorites" : undefined
 
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
@@ -148,7 +145,7 @@ function ProfileContent() {
           </Card>
 
           {/* 탭 */}
-          <Tabs defaultValue={activeTab === "favorites" ? "favorites" : "projects"} className="w-full">
+          <Tabs defaultValue={defaultTab} className="w-full">
             <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="projects">내 프로젝트</TabsTrigger>
               <TabsTrigger value="auctions">내 경매</TabsTrigger>
@@ -545,6 +542,12 @@ function ProfileContent() {
   )
 }
 
+function ProfileContentWrapper() {
+  const searchParams = useSearchParams()
+  const activeTab = searchParams.get("tab") === "favorites" ? "favorites" : "projects"
+  return <ProfileTabs defaultTab={activeTab} />
+}
+
 export default function ProfilePage() {
   return (
     <Suspense fallback={
@@ -558,7 +561,7 @@ export default function ProfilePage() {
         </main>
       </div>
     }>
-      <ProfileContent />
+      <ProfileContentWrapper />
     </Suspense>
   )
 }
