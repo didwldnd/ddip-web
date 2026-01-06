@@ -51,6 +51,9 @@ export interface ProjectResponse {
   endAt: string;
   rewardTiers: RewardTierResponse[];
   createdAt: string;
+  categoryPath?: string | null;
+  tags?: string | null;
+  summary?: string | null;
 }
 
 // 경매 관련 타입

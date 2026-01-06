@@ -42,6 +42,9 @@ export default function CreateProjectPage() {
       startAt: "",
       endAt: "",
       rewardTiers: [],
+      categoryPath: undefined,
+      tags: undefined,
+      summary: undefined,
     },
   })
 
@@ -206,6 +209,23 @@ export default function CreateProjectPage() {
                   )}
                 </div>
 
+                {/* 요약 */}
+                <div className="space-y-2">
+                  <Label htmlFor="summary">프로젝트 요약 (선택)</Label>
+                  <Input
+                    id="summary"
+                    {...register("summary")}
+                    placeholder="프로젝트를 한 줄로 요약해주세요 (최대 200자)"
+                    maxLength={200}
+                  />
+                  {errors.summary && (
+                    <Alert variant="destructive">
+                      <AlertCircle className="size-4" />
+                      <AlertDescription>{errors.summary.message}</AlertDescription>
+                    </Alert>
+                  )}
+                </div>
+
                 {/* 설명 */}
                 <div className="space-y-2">
                   <Label htmlFor="description">프로젝트 설명 *</Label>
@@ -224,13 +244,47 @@ export default function CreateProjectPage() {
                   )}
                 </div>
 
+                {/* 카테고리 경로 */}
+                <div className="space-y-2">
+                  <Label htmlFor="categoryPath">카테고리 경로 (선택)</Label>
+                  <Input
+                    id="categoryPath"
+                    {...register("categoryPath")}
+                    placeholder="예: Tech/IoT/SmartHome (최대 100자)"
+                    maxLength={100}
+                  />
+                  {errors.categoryPath && (
+                    <Alert variant="destructive">
+                      <AlertCircle className="size-4" />
+                      <AlertDescription>{errors.categoryPath.message}</AlertDescription>
+                    </Alert>
+                  )}
+                </div>
+
+                {/* 태그 */}
+                <div className="space-y-2">
+                  <Label htmlFor="tags">태그 (선택)</Label>
+                  <Input
+                    id="tags"
+                    {...register("tags")}
+                    placeholder="예: IoT, 스마트홈, 조명, 자동화 (쉼표로 구분, 최대 500자)"
+                    maxLength={500}
+                  />
+                  {errors.tags && (
+                    <Alert variant="destructive">
+                      <AlertCircle className="size-4" />
+                      <AlertDescription>{errors.tags.message}</AlertDescription>
+                    </Alert>
+                  )}
+                </div>
+
                 {/* 목표 금액 */}
                 <div className="space-y-2">
                   <Label htmlFor="targetAmount">목표 금액 (원) *</Label>
                   <Input
                     id="targetAmount"
                     type="number"
-                    min="10000"
+                    min="1"
                     step="1000"
                     {...register("targetAmount", { 
                       valueAsNumber: true,

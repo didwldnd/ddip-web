@@ -99,7 +99,7 @@ export function RewardTierForm({ tiers, onChange }: RewardTierFormProps) {
                     <Input
                       id={`tier-price-${index}`}
                       type="number"
-                      min="0"
+                      min="1"
                       value={tier.price || ""}
                       onChange={(e) => updateTier(index, { price: Number(e.target.value) })}
                       placeholder="45000"
