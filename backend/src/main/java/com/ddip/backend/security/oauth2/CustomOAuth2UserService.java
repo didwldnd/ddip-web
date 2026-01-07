@@ -1,6 +1,6 @@
 package com.ddip.backend.security.oauth2;
 
-import com.ddip.backend.dto.SocialUserRequestDto;
+import com.ddip.backend.dto.oauth2.SocialUserRequestDto;
 import com.ddip.backend.entity.User;
 import com.ddip.backend.repository.UserRepository;
 import com.ddip.backend.security.auth.CustomUserDetails;

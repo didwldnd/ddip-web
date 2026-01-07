@@ -34,6 +34,10 @@ public class CustomUserDetails implements UserDetails, OAuth2User {
         return List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()));
     }
 
+    public boolean getIsActive() {
+        return user.getIsActive();
+    }
+
     @Override
     public String getPassword() {
         return null;

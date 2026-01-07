@@ -1,5 +1,7 @@
 package com.ddip.backend.entity;
 
+import com.ddip.backend.dto.oauth2.SocialUserRequestDto;
+import com.ddip.backend.dto.user.ProfileRequestDto;
 import com.ddip.backend.dto.user.UserRequestDto;
 import com.ddip.backend.dto.user.UserUpdateRequestDto;
 import com.ddip.backend.enums.BankType;
@@ -42,31 +44,48 @@ public class User extends BaseTimeEntity{
     @Enumerated(EnumType.STRING)
     private Role role;
 
-    @Column(name = "bank_type", nullable = false)
+    @Column(name = "bank_type")
     @Enumerated(EnumType.STRING)
     private BankType bankType;
 
-    @Column(name = "account", nullable = false)
+    @Column(name = "account")
     private String account;
 
-    @Column(name = "account_holder", nullable = false)
+    @Column(name = "account_holder")
     private String accountHolder;
 
     @Column(name = "is_active", nullable = false)
-    private Boolean isActive = true;
+    private Boolean isActive;
 
-    public static User from(UserRequestDto request) {
+    public static User from(UserRequestDto dto) {
         return User.builder()
-                .email(request.getEmail())
-                .password(request.getPassword())
-                .username(request.getUsername())
-                .nickname(request.getNickname())
-                .phoneNumber(request.getPhoneNumber())
+                .email(dto.getEmail())
+                .password(dto.getPassword())
+                .username(dto.getUsername())
+                .nickname(dto.getNickname())
+                .phoneNumber(dto.getPhoneNumber())
                 .role(Role.USER)
-                .bankType(request.getBankType())
-                .account(request.getAccount())
-                .accountHolder(request.getAccountHolder())
+                .bankType(dto.getBankType())
+                .account(dto.getAccount())
+                .accountHolder(dto.getAccountHolder())
+                .isActive(true)
                 .build();
+    }
+
+    public static User from(SocialUserRequestDto dto) {
+        return User.builder()
+                .email(dto.getEmail())
+                .username("TMP")
+                .nickname(dto.getNickname())
+                .phoneNumber("TMP")
+                .role(dto.getRole())
+                .isActive(false)
+                .build();
+    }
+
+    public void updateProfile(ProfileRequestDto dto) {
+        this.username = dto.getUsername();
+        this.phoneNumber = dto.getPhoneNumber();
     }
 
     public void update(UserUpdateRequestDto updateRequest) {

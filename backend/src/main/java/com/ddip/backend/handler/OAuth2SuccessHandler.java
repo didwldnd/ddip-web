@@ -1,5 +1,6 @@
 package com.ddip.backend.handler;
 
+import com.ddip.backend.entity.User;
 import com.ddip.backend.security.auth.CustomUserDetails;
 import com.ddip.backend.security.auth.JwtUtils;
 import com.ddip.backend.service.TokenBlackListService;
@@ -32,7 +33,13 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
 
         String accessToken = jwtUtils.generateToken(email);
 
-        if(tokenBlackListService.isBlackList(accessToken)) {
+
+        if (Boolean.FALSE.equals(customUserDetails.getIsActive())) {
+            response.sendRedirect("/profile/complete");
+            return;
+        }
+
+        if (tokenBlackListService.isBlackList(accessToken)) {
             response.setStatus(HttpStatus.UNAUTHORIZED.value());
             return;
         }
