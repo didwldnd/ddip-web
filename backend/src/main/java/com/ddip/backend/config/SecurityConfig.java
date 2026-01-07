@@ -1,8 +1,13 @@
 package com.ddip.backend.config;
 
+import com.ddip.backend.handler.CustomAccessDeniedHandler;
+import com.ddip.backend.handler.CustomAuthenticationEntryPoint;
 import com.ddip.backend.handler.OAuth2SuccessHandler;
+import com.ddip.backend.security.auth.JwtAuthenticationFilter;
 import com.ddip.backend.security.auth.JwtTokenFilter;
+import com.ddip.backend.security.auth.JwtUtils;
 import com.ddip.backend.security.oauth2.CustomOAuth2UserService;
+import com.ddip.backend.service.TokenBlackListService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -21,18 +26,24 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final CustomOAuth2UserService customOAuth2UserService;
+    private final TokenBlackListService tokenBlackListService;
+    private final JwtUtils jwtUtils;
+    private final CustomAccessDeniedHandler  accessDeniedHandler;
+    private final CustomAuthenticationEntryPoint entryPoint;
     private final OAuth2SuccessHandler oAuth2SuccessHandler;
     private final JwtTokenFilter jwtTokenFilter;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        AuthenticationManager authenticationManager = authenticationManager(http.getSharedObject(AuthenticationConfiguration.class));
+        JwtAuthenticationFilter jwtAuthenticationFilter = new JwtAuthenticationFilter(authenticationManager, tokenBlackListService, jwtUtils);
 
         http.csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers( "/oauth2/**", "/login/oauth2/**",
-                                "/api/flights/search", "/api/flights/hot-routes"
-                                ,"/api/user/refresh-token","/login/oauth2/code/**",
-                                "/oauth2/callback/**","/","/login").permitAll()
+                        .requestMatchers("/oauth2/**", "/login/oauth2/**"
+                                , "/api/user/refresh-token", "/login/oauth2/code/**",
+                                "/oauth2/callback/**", "/", "/login",
+                                "api/users/update-profile").permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth2 -> oauth2
@@ -40,7 +51,11 @@ public class SecurityConfig {
                                 .userService(customOAuth2UserService))
                         .successHandler(oAuth2SuccessHandler)
                 )
-                .addFilterBefore(jwtTokenFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(jwtTokenFilter, JwtAuthenticationFilter.class)
+                .exceptionHandling(e -> e
+                        .authenticationEntryPoint(entryPoint)
+                        .accessDeniedHandler(accessDeniedHandler));
 
         return http.build();
     }
@@ -54,5 +69,4 @@ public class SecurityConfig {
     public BCryptPasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
-
 }

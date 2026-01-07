@@ -1,5 +1,7 @@
 package com.ddip.backend.security.auth;
 
+import com.ddip.backend.dto.error.security.ProfileIncompleteDeniedException;
+import com.ddip.backend.dto.error.security.TokenExpiredException;
 import com.ddip.backend.service.TokenBlackListService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -11,7 +13,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -29,17 +30,10 @@ public class JwtTokenFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
         String token = resolveToken(request);
 
-        log.info("requestUri: {}", request.getRequestURI());
+        log.info("JWT Token = {}", token);
 
-        if (!StringUtils.hasText(token)) {
-            log.info("Jwt token is empty");
+        if (tokenBlackListService.isBlackList(token)) {
             filterChain.doFilter(request, response);
-            return;
-        }
-
-        if (tokenBlackListService.isBlackListed(token)) {
-            log.info("Blacklisted token: {}", token);
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid access token");
             return;
         }
 
@@ -47,7 +41,7 @@ public class JwtTokenFilter extends OncePerRequestFilter {
 
         if (username == null) {
             log.info("Invalid token, Incorrect username");
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid access token");
+            filterChain.doFilter(request, response);
             return;
         }
 
@@ -60,12 +54,15 @@ public class JwtTokenFilter extends OncePerRequestFilter {
         CustomUserDetails userDetails = (CustomUserDetails) userDetailsService.loadUserByUsername(username);
 
         if (!jwtUtils.isValidToken(token, userDetails.getEmail())) {
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Access token expired");
-            return;
+            throw new TokenExpiredException("invalid token or Expired");
         }
 
         log.info("Successfully validate token");
         setAuthentication(userDetails, request);
+
+        if (!userDetails.getIsActive()) {
+            throw new ProfileIncompleteDeniedException("Invalid profile");
+        }
 
         filterChain.doFilter(request, response);
     }

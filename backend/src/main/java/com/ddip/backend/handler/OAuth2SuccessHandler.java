@@ -1,10 +1,10 @@
 package com.ddip.backend.handler;
 
-import com.ddip.backend.entity.User;
 import com.ddip.backend.security.auth.CustomUserDetails;
 import com.ddip.backend.security.auth.JwtUtils;
 import com.ddip.backend.service.TokenBlackListService;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -15,8 +15,6 @@ import org.springframework.security.web.authentication.AuthenticationSuccessHand
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 
 @Slf4j
 @Component
@@ -33,22 +31,23 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
 
         String accessToken = jwtUtils.generateToken(email);
 
-
-        if (Boolean.FALSE.equals(customUserDetails.getIsActive())) {
-            response.sendRedirect("/profile/complete");
-            return;
-        }
+        response.addHeader("Authorization", "Bearer " + accessToken);
 
         if (tokenBlackListService.isBlackList(accessToken)) {
             response.setStatus(HttpStatus.UNAUTHORIZED.value());
             return;
         }
 
-        String redirectUri = "exp://192.168.219.8:8081/--/redirect";
+        String refreshToken = jwtUtils.generateRefreshToken(authentication.getName());
+        Cookie refreshTokenCookie = new Cookie("refresh_token", refreshToken);
+        refreshTokenCookie.setPath("/");
+        refreshTokenCookie.setHttpOnly(true);
+        refreshTokenCookie.setSecure(true);
+        refreshTokenCookie.setMaxAge(Math.toIntExact(jwtUtils.getRefreshExpiration()));
+        response.addCookie(refreshTokenCookie);
 
-        String targetUrl = redirectUri + "?accessToken=" +
-                URLEncoder.encode(accessToken, StandardCharsets.UTF_8);
-
-        response.sendRedirect(targetUrl);
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+        response.getWriter().write("{ \"access_token\": \"" + accessToken + "\"");
     }
 }

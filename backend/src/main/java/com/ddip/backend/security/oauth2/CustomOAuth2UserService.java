@@ -34,7 +34,7 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
         if (!userRepository.existsByEmail(user.getEmail())){
             userRepository.save(user);
         }
-
+        
         return new CustomUserDetails(user, oAuth2UserAttributes);
     }
 

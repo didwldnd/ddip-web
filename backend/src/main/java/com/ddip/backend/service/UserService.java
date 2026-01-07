@@ -1,9 +1,6 @@
 package com.ddip.backend.service;
 
-import com.ddip.backend.dto.user.FindPasswordRequestDto;
-import com.ddip.backend.dto.user.UserRequestDto;
-import com.ddip.backend.dto.user.UserResponseDto;
-import com.ddip.backend.dto.user.UserUpdateRequestDto;
+import com.ddip.backend.dto.user.*;
 import com.ddip.backend.entity.User;
 import com.ddip.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -14,14 +11,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Service
-@Transactional(readOnly = true)
+@Transactional
 @RequiredArgsConstructor
 public class UserService {
 
     private final UserRepository userRepository;
     private final BCryptPasswordEncoder bCryptPasswordEncoder;
 
-    @Transactional
     public UserResponseDto createUser(UserRequestDto request) {
         request.setPassword(bCryptPasswordEncoder.encode(request.getPassword()));
 
@@ -33,6 +29,7 @@ public class UserService {
         return UserResponseDto.from(user);
     }
 
+    @Transactional(readOnly = true)
     public UserResponseDto getUser(Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
@@ -40,7 +37,6 @@ public class UserService {
         return UserResponseDto.from(user);
     }
 
-    @Transactional
     public void deleteUser(Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
@@ -48,15 +44,14 @@ public class UserService {
         userRepository.delete(user);
     }
 
-    @Transactional
-    public void updateUser(Long id, UserUpdateRequestDto updateRequest) {
+    public UserResponseDto updateUser(Long id, UserUpdateRequestDto updateRequest) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
         user.update(updateRequest);
+        return UserResponseDto.from(user);
     }
 
-    @Transactional
     public void updatePassword(Long id, String newPassword) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
@@ -64,9 +59,19 @@ public class UserService {
         user.updatePassword(newPassword);
     }
 
+    @Transactional(readOnly = true)
     public UserResponseDto findUserForPasswordReset(FindPasswordRequestDto dto) {
         User user = userRepository.findByEmailAndUsername(dto.getEmail(), dto.getUsername())
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        return UserResponseDto.from(user);
+    }
+
+    public UserResponseDto putProfile(Long id, ProfileRequestDto requestDto) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        user.updateProfile(requestDto);
 
         return UserResponseDto.from(user);
     }

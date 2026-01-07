@@ -1,6 +1,6 @@
 package com.ddip.backend.dto.user;
 
-import com.ddip.backend.enums.BankType;
+import com.ddip.backend.dto.enums.BankType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;

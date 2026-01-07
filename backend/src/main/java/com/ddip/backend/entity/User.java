@@ -1,11 +1,11 @@
 package com.ddip.backend.entity;
 
+import com.ddip.backend.dto.enums.BankType;
+import com.ddip.backend.dto.enums.Role;
 import com.ddip.backend.dto.oauth2.SocialUserRequestDto;
 import com.ddip.backend.dto.user.ProfileRequestDto;
 import com.ddip.backend.dto.user.UserRequestDto;
 import com.ddip.backend.dto.user.UserUpdateRequestDto;
-import com.ddip.backend.enums.BankType;
-import com.ddip.backend.enums.Role;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -33,6 +33,9 @@ public class User extends BaseTimeEntity{
 
     @Column(name = "name", nullable = false)
     private String username;
+
+    @Column(name = "provider", nullable = false)
+    private String provider;
 
     @Column(name = "nickname", nullable = false)
     private String nickname;
@@ -64,6 +67,7 @@ public class User extends BaseTimeEntity{
                 .username(dto.getUsername())
                 .nickname(dto.getNickname())
                 .phoneNumber(dto.getPhoneNumber())
+                .provider("LOCAL")
                 .role(Role.USER)
                 .bankType(dto.getBankType())
                 .account(dto.getAccount())

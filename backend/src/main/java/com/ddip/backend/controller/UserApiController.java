@@ -21,7 +21,7 @@ public class UserApiController {
     /**
      * 회원가입
      */
-    @PostMapping
+    @PostMapping("/register")
     public ResponseEntity<?> registerUser(@RequestBody UserRequestDto userRequest) {
         UserResponseDto userResponse = userService.createUser(userRequest);
 
@@ -31,14 +31,13 @@ public class UserApiController {
     /**
      * 회원정보 수정
      */
-    @PostMapping("/edit")
+    @PatchMapping("update")
     public ResponseEntity<?> updateUser(@AuthenticationPrincipal CustomUserDetails customUserDetails,
                                         @RequestBody UserUpdateRequestDto userUpdateReq) {
 
-        userService.updateUser(customUserDetails.getUserId(), userUpdateReq);
-        UserResponseDto updatedUser = userService.getUser(customUserDetails.getUserId());
+        UserResponseDto dto = userService.updateUser(customUserDetails.getUserId(), userUpdateReq);
 
-        return ResponseEntity.ok(updatedUser);
+        return ResponseEntity.ok(dto);
     }
 
     /**
@@ -64,5 +63,14 @@ public class UserApiController {
         FindPasswordResponse response = new FindPasswordResponse("임시 비밀번호는" + temporaryPassword + "입니다.");
 
         return ResponseEntity.ok(response);
+    }
+
+    @PatchMapping("/update-profile")
+    public ResponseEntity<?> updateProfile(@AuthenticationPrincipal CustomUserDetails customUserDetails,
+                                           @RequestBody ProfileRequestDto dto)  {
+
+        UserResponseDto userResponseDto = userService.putProfile(customUserDetails.getUserId(), dto);
+
+        return ResponseEntity.ok(userResponseDto);
     }
 }
