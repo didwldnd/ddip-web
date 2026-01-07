@@ -52,15 +52,7 @@ public class JwtUtils {
     }
 
     public String extractUserEmail(String token) {
-        try {
-            return extractAllClaims(token).getSubject();
-        } catch (ExpiredJwtException e) {
-            log.info("Expired JWT token: {}", e.getMessage());
-            return null;
-        } catch (JwtException e) {
-            log.info("Invalid JWT token: {}", e.getMessage());
-            return null;
-        }
+        return extractAllClaims(token).getSubject();
     }
 
     public Claims extractAllClaims(String token) {
