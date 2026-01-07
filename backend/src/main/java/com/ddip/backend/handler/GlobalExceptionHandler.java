@@ -24,7 +24,7 @@ public class GlobalExceptionHandler {
 
         log.info("InternalServerError", e);
 
-        return ResponseEntity.status(status).body(new ErrorResponse("Unknown error occurred", e.getMessage(), e.getCause()));
+        return ResponseEntity.status(status).body(new ErrorResponse("Unknown error occurred", e.getMessage()));
     }
 
     @ExceptionHandler(BusinessException.class)
