@@ -31,7 +31,7 @@ public class UserApiController {
     /**
      * 회원정보 수정
      */
-    @PatchMapping("update")
+    @PatchMapping("/update")
     public ResponseEntity<?> updateUser(@AuthenticationPrincipal CustomUserDetails customUserDetails,
                                         @RequestBody UserUpdateRequestDto userUpdateReq) {
 
