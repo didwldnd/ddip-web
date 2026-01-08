@@ -39,23 +39,27 @@ public class SecurityConfig {
         JwtAuthenticationFilter jwtAuthenticationFilter = new JwtAuthenticationFilter(authenticationManager, tokenBlackListService, jwtUtils);
 
         http.csrf(AbstractHttpConfigurer::disable)
+
+                .exceptionHandling(e -> e
+                        .authenticationEntryPoint(entryPoint)
+                        .accessDeniedHandler(accessDeniedHandler))
+
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/oauth2/**", "/login/oauth2/**"
-                                , "/api/user/refresh-token", "/login/oauth2/code/**",
-                                "/oauth2/callback/**", "/", "/login",
-                                "api/users/update-profile").permitAll()
+                                , "/login/oauth2/code/**", "/oauth2/callback/**").permitAll()
+                        .requestMatchers("/api/users/refresh-token", "api/users/update-profile",
+                                "/api/users/register").permitAll()
                         .anyRequest().authenticated()
                 )
+
                 .oauth2Login(oauth2 -> oauth2
                         .userInfoEndpoint(userInfo -> userInfo
                                 .userService(customOAuth2UserService))
                         .successHandler(oAuth2SuccessHandler)
                 )
+
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterAfter(jwtTokenFilter, JwtAuthenticationFilter.class)
-                .exceptionHandling(e -> e
-                        .authenticationEntryPoint(entryPoint)
-                        .accessDeniedHandler(accessDeniedHandler));
+                .addFilterAfter(jwtTokenFilter, JwtAuthenticationFilter.class);
 
         return http.build();
     }

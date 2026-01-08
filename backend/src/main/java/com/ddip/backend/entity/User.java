@@ -92,6 +92,10 @@ public class User extends BaseTimeEntity{
         this.phoneNumber = dto.getPhoneNumber();
     }
 
+    public void setIsActive() {
+        this.isActive = true;
+    }
+
     public void update(UserUpdateRequestDto updateRequest) {
         this.email = updateRequest.getEmail();
         this.password = updateRequest.getPassword();

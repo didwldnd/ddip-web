@@ -72,6 +72,7 @@ public class UserService {
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
         user.updateProfile(requestDto);
+        user.setIsActive();
 
         return UserResponseDto.from(user);
     }
