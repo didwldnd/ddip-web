@@ -39,7 +39,7 @@ public class JwtTokenFilter extends OncePerRequestFilter {
 
         String token = header.substring(7);
 
-        if (tokenBlackListService.isBlackList(token)) {
+        if (tokenBlackListService.isBlackListed(token)) {
             filterChain.doFilter(request, response);
             return;
         }

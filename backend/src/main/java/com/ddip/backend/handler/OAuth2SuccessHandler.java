@@ -33,7 +33,7 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
 
         response.addHeader("Authorization", "Bearer " + accessToken);
 
-        if (tokenBlackListService.isBlackList(accessToken)) {
+        if (tokenBlackListService.isBlackListed(accessToken)) {
             response.setStatus(HttpStatus.UNAUTHORIZED.value());
             return;
         }

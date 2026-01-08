@@ -11,7 +11,7 @@ import lombok.AllArgsConstructor;
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor
-public class CreateRewardTierRequest {
+public class RewardTierRequestDto {
 
     @NotBlank
     @Size(max = 200)
@@ -26,4 +26,5 @@ public class CreateRewardTierRequest {
     // null이면 무제한
     @Min(1)
     private Integer limitQuantity;
+
 }

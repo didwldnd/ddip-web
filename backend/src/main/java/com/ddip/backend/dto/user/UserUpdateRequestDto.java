@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class UserUpdateRequestDto {
+
     private String email;
     private String password;
     private String username;
@@ -19,4 +20,5 @@ public class UserUpdateRequestDto {
     private String account;
     private String accountHolder;
     private BankType bankType;
+
 }

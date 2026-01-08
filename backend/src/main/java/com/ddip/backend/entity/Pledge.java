@@ -1,5 +1,6 @@
 package com.ddip.backend.entity;
 
+import com.ddip.backend.dto.enums.PledgeStatus;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -14,5 +15,26 @@ import lombok.NoArgsConstructor;
 @Table(name = "pledge")
 public class Pledge extends BaseTimeEntity {
 
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "project_id", nullable = false)
+    private Project project;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "reward_tier_id")
+    private RewardTier rewardTier; // null 가능
+
+    @Column(nullable = false)
+    private Long amount;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20, nullable = false)
+    private PledgeStatus status;
 
 }

@@ -1,0 +1,112 @@
+package com.ddip.backend.service;
+
+import com.ddip.backend.dto.crowd.ProjectRequestDto;
+import com.ddip.backend.dto.crowd.ProjectResponseDto;
+import com.ddip.backend.dto.crowd.ProjectUpdateRequestDto;
+import com.ddip.backend.dto.crowd.RewardTierRequestDto;
+import com.ddip.backend.entity.Project;
+import com.ddip.backend.entity.RewardTier;
+import com.ddip.backend.entity.User;
+import com.ddip.backend.repository.ProjectRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Slf4j
+@Service
+@Transactional
+@RequiredArgsConstructor
+public class CrowdFundingService {
+
+    private final ProjectRepository projectRepository;
+    private final UserService userService;
+
+    public long createProject(ProjectRequestDto requestDto, Long userId) {
+
+        if (requestDto.getRewardTiers() == null || requestDto.getRewardTiers().isEmpty()) {
+            throw new IllegalArgumentException("리워드는 최소 1개 이상 필요합니다.");
+        }
+
+        User user = userService.getUser(userId);
+        Project project = Project.from(requestDto, user);
+
+        for (RewardTierRequestDto tierDto : requestDto.getRewardTiers()) {
+            RewardTier tier = RewardTier.builder()
+                    .project(project)
+                    .title(tierDto.getTitle())
+                    .description(tierDto.getDescription())
+                    .price(tierDto.getPrice())
+                    .limitQuantity(tierDto.getLimitQuantity())
+                    .build();
+
+            project.getRewardTiers().add(tier);
+        }
+
+        projectRepository.save(project);
+        return project.getId();
+    }
+
+
+    @Transactional(readOnly = true)
+    public ProjectResponseDto getProject(Long projectId) {
+        Project project = projectRepository.findByIdWithRewardTiers(projectId)
+                .orElseThrow(() -> new IllegalArgumentException("Project not found: " + projectId));
+
+        return ProjectResponseDto.from(project);
+    }
+
+
+    public void deleteProject(Long projectId, Long userId) {
+        User user = userService.getUser(userId);
+
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new IllegalArgumentException("Project not found: " + projectId));
+
+        // 본인 프로젝트만 삭제 가능
+        if (!project.getCreator().getId().equals(user.getId())) {
+            throw new IllegalStateException("본인 프로젝트만 삭제할 수 있습니다.");
+        }
+
+        project.cancel();
+    }
+
+   /* public void updateProject(Long projectId, Long userId, ProjectUpdateRequestDto requestDto) {
+        User user = userService.getUser(userId);
+
+        Project project = projectRepository.findByIdWithRewardTiers(projectId)
+                .orElseThrow(() -> new IllegalArgumentException("Project not found: " + projectId));
+
+        // 본인 프로젝트만 수정 가능
+        if (!project.getCreator().getId().equals(user.getId())) {
+            throw new IllegalStateException("본인 프로젝트만 수정할 수 있습니다.");
+        }
+
+        // 날짜 검증(둘 다 들어왔을 때만)
+        if (requestDto.getStartAt() != null && requestDto.getEndAt() != null
+                && !requestDto.getEndAt().isAfter(requestDto.getStartAt())) {
+            throw new IllegalArgumentException("종료일은 시작일 이후여야 합니다.");
+        }
+
+        // 기본 필드 부분 수정
+        project.update(requestDto);
+
+        // 리워드 수정(1차: 전체 교체 전략)
+        if (requestDto.getRewardTiers() != null) {
+            if (requestDto.getRewardTiers().isEmpty()) {
+                throw new IllegalArgumentException("리워드는 최소 1개 이상 필요합니다.");
+            }
+
+            project.clearRewardTiers();
+            for (RewardTierRequestDto tierDto : requestDto.getRewardTiers()) {
+                RewardTier tier = RewardTier.builder()
+                        .title(tierDto.getTitle())
+                        .description(tierDto.getDescription())
+                        .price(tierDto.getPrice())
+                        .limitQuantity(tierDto.getLimitQuantity())
+                        .build();
+
+                project.addRewardTier(tier);
+            }
+        }*/
+}

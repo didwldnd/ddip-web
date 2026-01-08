@@ -51,7 +51,7 @@ public class JwtAuthenticationFilter extends UsernamePasswordAuthenticationFilte
 
         response.addHeader("Authorization", "Bearer " + accessToken);
 
-        if(tokenBlackListService.isBlackList(accessToken)) {
+        if(tokenBlackListService.isBlackListed(accessToken)) {
             response.setStatus(HttpStatus.UNAUTHORIZED.value());
             return;
         }
@@ -70,5 +70,4 @@ public class JwtAuthenticationFilter extends UsernamePasswordAuthenticationFilte
         response.setCharacterEncoding("UTF-8");
         response.getWriter().write("{ \"access_token\": \"" + accessToken + "\" }");
     }
-}
 }

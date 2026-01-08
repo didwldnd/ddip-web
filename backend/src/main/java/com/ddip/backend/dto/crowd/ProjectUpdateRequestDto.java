@@ -1,9 +1,7 @@
 package com.ddip.backend.dto.crowd;
 
-import jakarta.validation.Valid;
+
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -17,24 +15,17 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class CreateProjectRequest {
+public class ProjectUpdateRequestDto {
 
-    @NotBlank
     @Size(max = 200)
     private String title;
 
-    // 긴 본문
-    @NotBlank
     private String description;
 
-    @NotNull
     @Min(1)
     private Long targetAmount;
 
-    @NotNull
     private LocalDateTime startAt;
-
-    @NotNull
     private LocalDateTime endAt;
 
     @Size(max = 100)
@@ -46,8 +37,5 @@ public class CreateProjectRequest {
     @Size(max = 200)
     private String summary;
 
-    @NotNull
-    @Valid
-    private List<CreateRewardTierRequest> rewardTiers;
-
+    private List<RewardTierRequestDto> rewardTiers;
 }

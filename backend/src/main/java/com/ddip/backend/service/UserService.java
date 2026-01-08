@@ -30,11 +30,11 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
-    public UserResponseDto getUser(Long id) {
+    public User getUser(Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
-        return UserResponseDto.from(user);
+        return user;
     }
 
     public void deleteUser(Long id) {

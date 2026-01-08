@@ -9,6 +9,7 @@ import lombok.*;
 @NoArgsConstructor
 @AllArgsConstructor
 public class UserRequestDto {
+
     private String email;
     private String password;
     private String username;
@@ -17,4 +18,5 @@ public class UserRequestDto {
     private String account;
     private String accountHolder;
     private BankType bankType;
+
 }

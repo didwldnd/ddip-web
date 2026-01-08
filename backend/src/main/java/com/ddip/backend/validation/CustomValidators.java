@@ -1,5 +1,6 @@
 package com.ddip.backend.validation;
 
+import com.ddip.backend.dto.user.UserUpdateRequestDto;
 import com.ddip.backend.repository.UserRepository;
 import com.ddip.backend.security.auth.CustomUserDetails;
 import lombok.RequiredArgsConstructor;
