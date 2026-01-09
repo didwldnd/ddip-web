@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/src/components/ui/avatar"
 import { Input } from "@/src/components/ui/input"
 import { Label } from "@/src/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/src/components/ui/tabs"
-import { AlertCircle, Clock, Gavel, Heart, Share2, MapPin, Loader2 } from "lucide-react"
+import { AlertCircle, Clock, Gavel, Heart, Share2, MapPin, Loader2, ChevronLeft, ChevronRight } from "lucide-react"
 import Image from "next/image"
 import { useState, useEffect, use, useRef } from "react"
 import { Alert, AlertDescription } from "@/src/components/ui/alert"
@@ -38,6 +38,7 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
   const [bidHistory, setBidHistory] = useState<BidResponse[]>([])
   const [loadingBids, setLoadingBids] = useState(false)
   const [isFavorite, setIsFavorite] = useState(false)
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0)
   
   // 실시간 입찰 내역 (웹소켓 사용 시)
   // const [realtimeBids, setRealtimeBids] = useState<BidPlacedEvent[]>([])
@@ -345,27 +346,78 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
         <div className="grid gap-8 lg:grid-cols-3">
           {/* Main content */}
           <div className="lg:col-span-2">
-            {/* Hero image */}
-            <div className="relative mb-6 aspect-video overflow-hidden rounded-xl bg-muted">
-              <Image
-                src={auction.imageUrl || "/placeholder.svg"}
-                alt={auction.title}
-                fill
-                className="object-cover"
-              />
-              <div className="absolute left-4 top-4 flex gap-2">
-                <Badge className="bg-secondary text-secondary-foreground">경매</Badge>
-                {isLive && (
-                  <Badge className="animate-pulse bg-destructive text-destructive-foreground">LIVE</Badge>
-                )}
-                {auction.status === "ENDED" && (
-                  <Badge variant="secondary">종료됨</Badge>
-                )}
-                {auction.status === "CANCELED" && (
-                  <Badge variant="destructive">취소됨</Badge>
-                )}
-              </div>
-            </div>
+            {/* Hero image gallery */}
+            {(() => {
+              const images = auction.imageUrls && auction.imageUrls.length > 0 
+                ? auction.imageUrls 
+                : auction.imageUrl 
+                  ? [auction.imageUrl] 
+                  : ["/placeholder.svg"]
+              const hasMultipleImages = images.length > 1
+
+              return (
+                <div className="relative mb-6 aspect-video overflow-hidden rounded-xl bg-muted">
+                  <Image
+                    src={images[selectedImageIndex] || "/placeholder.svg"}
+                    alt={auction.title}
+                    fill
+                    className="object-cover"
+                  />
+                  
+                  {/* 이미지 네비게이션 버튼 */}
+                  {hasMultipleImages && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="absolute left-4 top-1/2 -translate-y-1/2 bg-background/80 backdrop-blur-sm hover:bg-background"
+                        onClick={() => setSelectedImageIndex((prev) => (prev - 1 + images.length) % images.length)}
+                      >
+                        <ChevronLeft className="size-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="absolute right-4 top-1/2 -translate-y-1/2 bg-background/80 backdrop-blur-sm hover:bg-background"
+                        onClick={() => setSelectedImageIndex((prev) => (prev + 1) % images.length)}
+                      >
+                        <ChevronRight className="size-4" />
+                      </Button>
+                      
+                      {/* 이미지 인디케이터 */}
+                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+                        {images.map((_, index) => (
+                          <button
+                            key={index}
+                            type="button"
+                            className={`h-2 rounded-full transition-all ${
+                              index === selectedImageIndex
+                                ? "w-8 bg-primary"
+                                : "w-2 bg-background/50 hover:bg-background/80"
+                            }`}
+                            onClick={() => setSelectedImageIndex(index)}
+                            aria-label={`이미지 ${index + 1}로 이동`}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  
+                  <div className="absolute left-4 top-4 flex gap-2">
+                    <Badge className="bg-secondary text-secondary-foreground">경매</Badge>
+                    {isLive && (
+                      <Badge className="animate-pulse bg-destructive text-destructive-foreground">LIVE</Badge>
+                    )}
+                    {auction.status === "ENDED" && (
+                      <Badge variant="secondary">종료됨</Badge>
+                    )}
+                    {auction.status === "CANCELED" && (
+                      <Badge variant="destructive">취소됨</Badge>
+                    )}
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* Title and actions */}
             <div className="mb-6">
@@ -462,10 +514,12 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                         <span className="text-muted-foreground">
                           {isNaN(startTime.getTime()) 
                             ? "날짜 오류" 
-                            : startTime.toLocaleDateString("ko-KR", { 
+                            : startTime.toLocaleString("ko-KR", { 
                                 year: "numeric", 
                                 month: "long", 
-                                day: "numeric" 
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit"
                               })
                           }
                         </span>
@@ -475,10 +529,12 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                         <span className="text-muted-foreground">
                           {isNaN(endTime.getTime()) 
                             ? "날짜 오류" 
-                            : endTime.toLocaleDateString("ko-KR", { 
+                            : endTime.toLocaleString("ko-KR", { 
                                 year: "numeric", 
                                 month: "long", 
-                                day: "numeric" 
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit"
                               })
                           }
                         </span>
@@ -642,10 +698,12 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                     <span className="font-semibold">
                       {isNaN(startTime.getTime()) 
                         ? "날짜 오류" 
-                        : startTime.toLocaleDateString("ko-KR", { 
+                        : startTime.toLocaleString("ko-KR", { 
                             year: "numeric", 
                             month: "long", 
-                            day: "numeric" 
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit"
                           })
                       }
                     </span>
@@ -655,10 +713,12 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                     <span className="font-semibold">
                       {isNaN(endTime.getTime()) 
                         ? "날짜 오류" 
-                        : endTime.toLocaleDateString("ko-KR", { 
+                        : endTime.toLocaleString("ko-KR", { 
                             year: "numeric", 
                             month: "long", 
-                            day: "numeric" 
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit"
                           })
                       }
                     </span>

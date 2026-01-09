@@ -14,6 +14,7 @@ import { Label } from "@/src/components/ui/label"
 import { Calendar, Clock, Heart, Share2, TrendingUp, MapPin, CheckCircle2, Loader2, AlertCircle } from "lucide-react"
 import Image from "next/image"
 import { useState, useEffect, use } from "react"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Alert, AlertDescription } from "@/src/components/ui/alert"
 import { projectApi } from "@/src/services/api"
 import { ProjectResponse } from "@/src/types/api"
@@ -35,6 +36,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [isSupporting, setIsSupporting] = useState(false)
   const [timeLeft, setTimeLeft] = useState<string>("")
   const [isFavorite, setIsFavorite] = useState(false)
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0)
 
   // 프로젝트 데이터 로드
   useEffect(() => {
@@ -290,25 +292,76 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         <div className="grid gap-8 lg:grid-cols-3">
           {/* Main content */}
           <div className="lg:col-span-2">
-            {/* Hero image */}
-            <div className="relative mb-6 aspect-video overflow-hidden rounded-xl bg-muted">
-              <Image
-                src={project.imageUrl || "/placeholder.svg"}
-                alt={project.title}
-                fill
-                className="object-cover"
-              />
-              <Badge className="absolute left-4 top-4">크라우드펀딩</Badge>
-              {project.status === "OPEN" && (
-                <Badge className="absolute right-4 top-4 bg-primary">진행 중</Badge>
-              )}
-              {project.status === "SUCCESS" && (
-                <Badge className="absolute right-4 top-4 bg-green-500">성공</Badge>
-              )}
-              {project.status === "FAILED" && (
-                <Badge variant="destructive" className="absolute right-4 top-4">실패</Badge>
-              )}
-            </div>
+            {/* Hero image gallery */}
+            {(() => {
+              const images = project.imageUrls && project.imageUrls.length > 0 
+                ? project.imageUrls 
+                : project.imageUrl 
+                  ? [project.imageUrl] 
+                  : ["/placeholder.svg"]
+              const hasMultipleImages = images.length > 1
+
+              return (
+                <div className="relative mb-6 aspect-video overflow-hidden rounded-xl bg-muted">
+                  <Image
+                    src={images[selectedImageIndex] || "/placeholder.svg"}
+                    alt={project.title}
+                    fill
+                    className="object-cover"
+                  />
+                  
+                  {/* 이미지 네비게이션 버튼 */}
+                  {hasMultipleImages && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="absolute left-4 top-1/2 -translate-y-1/2 bg-background/80 backdrop-blur-sm hover:bg-background"
+                        onClick={() => setSelectedImageIndex((prev) => (prev - 1 + images.length) % images.length)}
+                      >
+                        <ChevronLeft className="size-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="absolute right-4 top-1/2 -translate-y-1/2 bg-background/80 backdrop-blur-sm hover:bg-background"
+                        onClick={() => setSelectedImageIndex((prev) => (prev + 1) % images.length)}
+                      >
+                        <ChevronRight className="size-4" />
+                      </Button>
+                      
+                      {/* 이미지 인디케이터 */}
+                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+                        {images.map((_, index) => (
+                          <button
+                            key={index}
+                            type="button"
+                            className={`h-2 rounded-full transition-all ${
+                              index === selectedImageIndex
+                                ? "w-8 bg-primary"
+                                : "w-2 bg-background/50 hover:bg-background/80"
+                            }`}
+                            onClick={() => setSelectedImageIndex(index)}
+                            aria-label={`이미지 ${index + 1}로 이동`}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  
+                  <Badge className="absolute left-4 top-4">크라우드펀딩</Badge>
+                  {project.status === "OPEN" && (
+                    <Badge className="absolute right-4 top-4 bg-primary">진행 중</Badge>
+                  )}
+                  {project.status === "SUCCESS" && (
+                    <Badge className="absolute right-4 top-4 bg-green-500">성공</Badge>
+                  )}
+                  {project.status === "FAILED" && (
+                    <Badge variant="destructive" className="absolute right-4 top-4">실패</Badge>
+                  )}
+                </div>
+              )
+            })()}
 
             {/* Title and actions */}
             <div className="mb-6">

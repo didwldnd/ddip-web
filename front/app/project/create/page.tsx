@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src
 import { Alert, AlertDescription } from "@/src/components/ui/alert"
 import { AlertCircle, Loader2 } from "lucide-react"
 import { ProtectedRoute } from "@/src/components/protected-route"
-import { ImageUpload } from "@/src/components/image-upload"
+import { MultiImageUpload } from "@/src/components/multi-image-upload"
 import { RewardTierForm, RewardTierFormData } from "@/src/components/reward-tier-form"
 import { projectApi } from "@/src/services/api"
 import { projectCreateSchema, ProjectCreateFormData } from "@/src/lib/validations"
@@ -20,7 +20,7 @@ import { toast } from "sonner"
 
 export default function CreateProjectPage() {
   const router = useRouter()
-  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imageFiles, setImageFiles] = useState<File[]>([])
   const [rewardTiers, setRewardTiers] = useState<RewardTierFormData[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [startDate, setStartDate] = useState<string>("")
@@ -57,18 +57,39 @@ export default function CreateProjectPage() {
     try {
       setIsSubmitting(true)
 
-      // 이미지 파일이 있으면 base64로 변환 (localStorage 저장용)
-      let imageUrl: string | null = null
-      if (imageFile) {
+      // 이미지 파일들을 base64로 변환 (localStorage 저장용)
+      let imageUrls: string[] | null = null
+      if (imageFiles.length > 0) {
         // Mock: 실제로는 FormData로 백엔드에 업로드
-        // localStorage 저장을 위해 base64로 변환
-        imageUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve(reader.result as string)
-          reader.onerror = reject
-          reader.readAsDataURL(imageFile)
-        })
+        // localStorage 저장을 위해 base64로 변환 (크기 제한 적용)
+        imageUrls = await Promise.all(
+          imageFiles.map(
+            (file) =>
+              new Promise<string>((resolve, reject) => {
+                // 파일 크기 체크 (5MB 제한)
+                if (file.size > 5 * 1024 * 1024) {
+                  toast.error(`이미지 크기가 너무 큽니다: ${file.name} (최대 5MB)`)
+                  reject(new Error(`이미지 크기 초과: ${file.name}`))
+                  return
+                }
+                
+                const reader = new FileReader()
+                reader.onload = () => {
+                  const result = reader.result as string
+                  // base64 문자열 크기 체크 (약 2MB 제한)
+                  if (result.length > 2 * 1024 * 1024) {
+                    toast.warning(`이미지 ${file.name}의 크기가 큽니다. 저장 시 문제가 발생할 수 있습니다.`)
+                  }
+                  resolve(result)
+                }
+                reader.onerror = reject
+                reader.readAsDataURL(file)
+              })
+          )
+        )
       }
+      // 첫 번째 이미지를 imageUrl로 설정 (하위 호환성)
+      const imageUrl = imageUrls && imageUrls.length > 0 ? imageUrls[0] : null
 
       // 날짜 유효성 검사 및 ISO 형식으로 변환
       if (!data.startAt || !data.endAt || data.startAt.trim() === "" || data.endAt.trim() === "") {
@@ -145,6 +166,7 @@ export default function CreateProjectPage() {
         startAt: startDateISO,
         endAt: endDateISO,
         imageUrl,
+        imageUrls,
         rewardTiers: rewardTiers.map((tier) => ({
           id: 0,
           title: tier.title,
@@ -187,8 +209,8 @@ export default function CreateProjectPage() {
                 {/* 프로젝트 이미지 */}
                 <div className="space-y-2">
                   <Label>프로젝트 이미지 *</Label>
-                  <ImageUpload value={imageFile} onChange={setImageFile} />
-                  {!imageFile && (
+                  <MultiImageUpload value={imageFiles} onChange={setImageFiles} maxImages={3} />
+                  {imageFiles.length === 0 && (
                     <p className="text-sm text-muted-foreground">프로젝트를 대표할 이미지를 업로드해주세요</p>
                   )}
                 </div>
@@ -285,7 +307,7 @@ export default function CreateProjectPage() {
                     id="targetAmount"
                     type="number"
                     min="1"
-                    step="1000"
+                    step="1"
                     {...register("targetAmount", { 
                       valueAsNumber: true,
                       onChange: (e) => {

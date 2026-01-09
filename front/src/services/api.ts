@@ -18,6 +18,9 @@ const auctionStore = new Map<number, AuctionResponse>();
 const supportStore = new Map<number, SupportResponse>();
 const bidStore = new Map<number, BidResponse>();
 
+// 이미지 저장소 (메모리 전용, localStorage에 저장하지 않음)
+const imageStore = new Map<string, string>(); // key: "project-{id}" or "auction-{id}", value: base64 image
+
 // localStorage 키
 const PROJECT_STORE_KEY = 'ddip_projects';
 const AUCTION_STORE_KEY = 'ddip_auctions';
@@ -46,20 +49,75 @@ function loadAuctionsFromStorage(): void {
     if (stored) {
       const auctions = JSON.parse(stored) as AuctionResponse[];
       auctions.forEach(auction => {
-        auctionStore.set(auction.id, auction);
+        // 이미지는 localStorage에 저장하지 않으므로 null로 설정
+        const auctionWithoutImages = {
+          ...auction,
+          imageUrl: null,
+          imageUrls: null,
+        };
+        auctionStore.set(auction.id, auctionWithoutImages);
       });
-      console.log(`localStorage에서 ${auctions.length}개 경매 로드됨`);
+      console.log(`localStorage에서 ${auctions.length}개 경매 로드됨 (이미지는 메모리에만 저장)`);
     }
   } catch (error) {
     console.error('경매 로드 실패:', error);
   }
 }
 
-// localStorage에 데이터 저장
+// localStorage에 데이터 저장 (할당량 초과 시 오래된 항목 삭제)
 function saveProjectsToStorage(): void {
   try {
     const projects = Array.from(projectStore.values());
-    localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(projects));
+    const dataString = JSON.stringify(projects);
+    
+    try {
+      localStorage.setItem(PROJECT_STORE_KEY, dataString);
+    } catch (error) {
+      // QuotaExceededError 처리: 오래된 항목 삭제 후 재시도
+      if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+        console.warn('localStorage 할당량 초과. 오래된 프로젝트를 삭제합니다.');
+        
+        // 생성일 기준으로 정렬하여 최신 항목만 유지 (최대 50개)
+        const sortedProjects = projects
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .slice(0, 50);
+        
+        // 이미지 완전 제거하여 크기 최소화 (base64 이미지가 너무 큼)
+        const trimmedProjects = sortedProjects.map(project => ({
+          ...project,
+          imageUrls: null, // 이미지 제거
+          imageUrl: null, // 이미지 제거
+        }));
+        
+        try {
+          localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(trimmedProjects));
+          console.log(`프로젝트 저장 성공 (${trimmedProjects.length}개 유지, 이미지 제거됨)`);
+        } catch (retryError) {
+          console.error('프로젝트 저장 재시도 실패:', retryError);
+          // 더 적은 개수로 재시도 (최대 20개)
+          const furtherTrimmed = sortedProjects.slice(0, 20).map(project => ({
+            ...project,
+            imageUrls: null,
+            imageUrl: null,
+          }));
+          
+          try {
+            localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(furtherTrimmed));
+            console.log(`프로젝트 저장 성공 (${furtherTrimmed.length}개만 유지)`);
+          } catch (finalError) {
+            // 최후의 수단: localStorage 비우기
+            try {
+              localStorage.removeItem(PROJECT_STORE_KEY);
+              console.warn('localStorage에서 프로젝트 데이터를 삭제했습니다.');
+            } catch (clearError) {
+              console.error('localStorage 삭제 실패:', clearError);
+            }
+          }
+        }
+      } else {
+        throw error;
+      }
+    }
   } catch (error) {
     console.error('프로젝트 저장 실패:', error);
   }
@@ -68,7 +126,56 @@ function saveProjectsToStorage(): void {
 function saveAuctionsToStorage(): void {
   try {
     const auctions = Array.from(auctionStore.values());
-    localStorage.setItem(AUCTION_STORE_KEY, JSON.stringify(auctions));
+    const dataString = JSON.stringify(auctions);
+    
+    try {
+      localStorage.setItem(AUCTION_STORE_KEY, dataString);
+    } catch (error) {
+      // QuotaExceededError 처리: 오래된 항목 삭제 후 재시도
+      if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+        console.warn('localStorage 할당량 초과. 오래된 경매를 삭제합니다.');
+        
+        // 생성일 기준으로 정렬하여 최신 항목만 유지 (최대 50개)
+        const sortedAuctions = auctions
+          .sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime())
+          .slice(0, 50);
+        
+        // 이미지 완전 제거하여 크기 최소화 (base64 이미지가 너무 큼)
+        const trimmedAuctions = sortedAuctions.map(auction => ({
+          ...auction,
+          imageUrls: null, // 이미지 제거
+          imageUrl: null, // 이미지 제거
+        }));
+        
+        try {
+          localStorage.setItem(AUCTION_STORE_KEY, JSON.stringify(trimmedAuctions));
+          console.log(`경매 저장 성공 (${trimmedAuctions.length}개 유지, 이미지 제거됨)`);
+        } catch (retryError) {
+          console.error('경매 저장 재시도 실패:', retryError);
+          // 더 적은 개수로 재시도 (최대 20개)
+          const furtherTrimmed = sortedAuctions.slice(0, 20).map(auction => ({
+            ...auction,
+            imageUrls: null,
+            imageUrl: null,
+          }));
+          
+          try {
+            localStorage.setItem(AUCTION_STORE_KEY, JSON.stringify(furtherTrimmed));
+            console.log(`경매 저장 성공 (${furtherTrimmed.length}개만 유지)`);
+          } catch (finalError) {
+            // 최후의 수단: localStorage 비우기
+            try {
+              localStorage.removeItem(AUCTION_STORE_KEY);
+              console.warn('localStorage에서 경매 데이터를 삭제했습니다.');
+            } catch (clearError) {
+              console.error('localStorage 삭제 실패:', clearError);
+            }
+          }
+        }
+      } else {
+        throw error;
+      }
+    }
   } catch (error) {
     console.error('경매 저장 실패:', error);
   }
@@ -259,22 +366,33 @@ const createMockProject = (
     createdAt = defaultCreatedAt.toISOString()
   }
 
+  // imageUrls가 있으면 첫 번째를 imageUrl로 설정, 없으면 기본값 사용
+  const defaultImageUrl = `https://picsum.photos/800/600?random=${id}`
+  const imageUrls = overrides?.imageUrls || null
+  const imageUrl = imageUrls && imageUrls.length > 0 ? imageUrls[0] : (overrides?.imageUrl || defaultImageUrl)
+
   // overrides를 먼저 스프레드하고, 검증된 날짜로 덮어쓰기
   return {
     id,
     creator,
     title: `프로젝트 제목 ${id}`,
     description: `프로젝트 ${id}에 대한 상세 설명입니다.`,
-    imageUrl: `https://picsum.photos/800/600?random=${id}`,
-    targetAmount: 1000000,
-    currentAmount: Math.floor(Math.random() * 1000000),
-    status,
-    rewardTiers,
+    imageUrl,
+    imageUrls,
+    // 기본값 설정 (overrides에 없을 경우에만 사용)
+    targetAmount: overrides?.targetAmount ?? 1000000,
+    currentAmount: overrides?.currentAmount ?? Math.floor(Math.random() * 1000000),
+    status: overrides?.status ?? status,
+    rewardTiers: overrides?.rewardTiers ?? rewardTiers,
+    // overrides의 다른 필드들
     ...overrides,
     // 날짜는 위에서 검증된 값으로 덮어쓰기 (overrides의 날짜가 유효하지 않을 수 있으므로)
     startAt,
     endAt,
     createdAt,
+    // imageUrl과 imageUrls는 위에서 처리한 값으로 덮어쓰기
+    imageUrl,
+    imageUrls,
   };
 };
 
@@ -354,13 +472,19 @@ const createMockAuction = (
     endAt = defaultEndDate.toISOString()
   }
 
+  // imageUrls가 있으면 첫 번째를 imageUrl로 설정, 없으면 기본값 사용
+  const defaultImageUrl = `https://picsum.photos/800/600?random=${id + 1000}`
+  const imageUrls = overrides?.imageUrls || null
+  const imageUrl = imageUrls && imageUrls.length > 0 ? imageUrls[0] : (overrides?.imageUrl || defaultImageUrl)
+
   // overrides를 먼저 스프레드하고, 검증된 날짜로 덮어쓰기
   return {
     id,
     seller,
     title: `경매 상품 ${id}`,
     description: `경매 상품 ${id}에 대한 상세 설명입니다.`,
-    imageUrl: `https://picsum.photos/800/600?random=${id + 1000}`,
+    imageUrl,
+    imageUrls,
     startPrice: 50000,
     currentPrice: 50000 + id * 10000,
     bidStep: 5000,
@@ -371,6 +495,9 @@ const createMockAuction = (
     // 날짜는 위에서 검증된 값으로 덮어쓰기 (overrides의 날짜가 유효하지 않을 수 있으므로)
     startAt,
     endAt,
+    // imageUrl과 imageUrls는 위에서 처리한 값으로 덮어쓰기
+    imageUrl,
+    imageUrls,
   };
 };
 
@@ -412,8 +539,24 @@ export const projectApi = {
     // 저장된 프로젝트가 있으면 반환
     const storedProject = projectStore.get(id);
     if (storedProject) {
-      console.log("저장된 프로젝트 반환:", { id, title: storedProject.title });
-      return storedProject;
+      // 메모리에서 이미지 복원
+      const imageUrls: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        const imageKey = `project-${id}-${i}`;
+        const image = imageStore.get(imageKey);
+        if (image) {
+          imageUrls.push(image);
+        }
+      }
+      
+      const projectWithImages = {
+        ...storedProject,
+        imageUrl: imageUrls[0] || storedProject.imageUrl,
+        imageUrls: imageUrls.length > 0 ? imageUrls : storedProject.imageUrls,
+      };
+      
+      console.log("저장된 프로젝트 반환:", { id, title: projectWithImages.title });
+      return projectWithImages;
     }
     
     // 없으면 기본 Mock 데이터 반환
@@ -456,15 +599,39 @@ export const projectApi = {
     
     const projectId = Date.now();
     const currentUser = getCurrentUser();
-    const result = createMockProject(projectId, {
+    
+    // 이미지를 메모리에 저장 (localStorage 할당량 문제 방지)
+    if (data.imageUrls && data.imageUrls.length > 0) {
+      data.imageUrls.forEach((imageUrl, index) => {
+        imageStore.set(`project-${projectId}-${index}`, imageUrl);
+      });
+    } else if (data.imageUrl) {
+      imageStore.set(`project-${projectId}-0`, data.imageUrl);
+    }
+    
+    // localStorage에는 이미지 없이 저장
+    const dataWithoutImages = {
       ...data,
+      imageUrl: null,
+      imageUrls: null,
+    };
+    
+    const result = createMockProject(projectId, {
+      ...dataWithoutImages,
       creator: currentUser,
       createdAt: new Date().toISOString(),
     });
     
+    // 메모리에는 이미지 포함하여 저장
+    const resultWithImages = {
+      ...result,
+      imageUrl: data.imageUrl,
+      imageUrls: data.imageUrls,
+    };
+    
     // 생성한 프로젝트를 저장소에 저장
-    projectStore.set(projectId, result);
-    saveProjectsToStorage(); // localStorage에도 저장
+    projectStore.set(projectId, resultWithImages);
+    saveProjectsToStorage(); // localStorage에는 이미지 없이 저장
     
     console.log("createProject result:", {
       id: result.id,
@@ -695,8 +862,24 @@ export const auctionApi = {
     // 저장된 경매가 있으면 반환
     const storedAuction = auctionStore.get(id);
     if (storedAuction) {
-      console.log("저장된 경매 반환:", { id, title: storedAuction.title });
-      return storedAuction;
+      // 메모리에서 이미지 복원
+      const imageUrls: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        const imageKey = `auction-${id}-${i}`;
+        const image = imageStore.get(imageKey);
+        if (image) {
+          imageUrls.push(image);
+        }
+      }
+      
+      const auctionWithImages = {
+        ...storedAuction,
+        imageUrl: imageUrls[0] || storedAuction.imageUrl,
+        imageUrls: imageUrls.length > 0 ? imageUrls : storedAuction.imageUrls,
+      };
+      
+      console.log("저장된 경매 반환:", { id, title: auctionWithImages.title });
+      return auctionWithImages;
     }
     
     // 없으면 기본 Mock 데이터 반환
@@ -739,15 +922,39 @@ export const auctionApi = {
     
     const auctionId = Date.now();
     const currentUser = getCurrentUser();
-    const result = createMockAuction(auctionId, {
+    
+    // 이미지를 메모리에 저장 (localStorage 할당량 문제 방지)
+    if (data.imageUrls && data.imageUrls.length > 0) {
+      data.imageUrls.forEach((imageUrl, index) => {
+        imageStore.set(`auction-${auctionId}-${index}`, imageUrl);
+      });
+    } else if (data.imageUrl) {
+      imageStore.set(`auction-${auctionId}-0`, data.imageUrl);
+    }
+    
+    // localStorage에는 이미지 없이 저장
+    const dataWithoutImages = {
       ...data,
+      imageUrl: null,
+      imageUrls: null,
+    };
+    
+    const result = createMockAuction(auctionId, {
+      ...dataWithoutImages,
       seller: currentUser,
       winner: null,
     });
     
+    // 메모리에는 이미지 포함하여 저장
+    const resultWithImages = {
+      ...result,
+      imageUrl: data.imageUrl,
+      imageUrls: data.imageUrls,
+    };
+    
     // 생성한 경매를 저장소에 저장
-    auctionStore.set(auctionId, result);
-    saveAuctionsToStorage(); // localStorage에도 저장
+    auctionStore.set(auctionId, resultWithImages);
+    saveAuctionsToStorage(); // localStorage에는 이미지 없이 저장
     
     console.log("createAuction result:", {
       id: result.id,

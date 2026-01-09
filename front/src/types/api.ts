@@ -43,7 +43,8 @@ export interface ProjectResponse {
   creator: UserResponse;
   title: string;
   description: string;
-  imageUrl: string | null;
+  imageUrl: string | null; // 하위 호환성 유지 (첫 번째 이미지)
+  imageUrls?: string[] | null; // 다중 이미지 (최대 3장)
   targetAmount: number;
   currentAmount: number;
   status: 'DRAFT' | 'OPEN' | 'SUCCESS' | 'FAILED' | 'CANCELED';
@@ -62,7 +63,8 @@ export interface AuctionResponse {
   seller: UserResponse;
   title: string;
   description: string;
-  imageUrl: string | null;
+  imageUrl: string | null; // 하위 호환성 유지 (첫 번째 이미지)
+  imageUrls?: string[] | null; // 다중 이미지 (최대 3장)
   startPrice: number;
   currentPrice: number;
   bidStep: number;
