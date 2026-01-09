@@ -50,9 +50,9 @@ export function ProjectCard({
     setIsFavorite(newState)
     
     if (newState) {
-      toast.success("위시리스트에 추가되었습니다")
+      toast.success("찜하기에 추가되었습니다")
     } else {
-      toast.info("위시리스트에서 제거되었습니다")
+      toast.info("찜하기에서 제거되었습니다")
     }
   }
 

@@ -20,6 +20,7 @@ import { useAuth } from "@/src/contexts/auth-context"
 import { BidResponse } from "@/src/types/api"
 import { maskUserId, formatRelativeTime } from "@/src/lib/user-utils"
 import { formatIncrement } from "@/src/lib/format-amount"
+import { isInWishlist, toggleWishlist } from "@/src/lib/wishlist"
 // 웹소켓 관련 (백엔드 준비되면 주석 해제)
 // import { useAuctionSocket } from "@/src/hooks/useAuctionSocket"
 // import { RealtimeBidList } from "@/src/components/realtime-bid-list"
@@ -36,6 +37,7 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
   const [isBidding, setIsBidding] = useState(false)
   const [bidHistory, setBidHistory] = useState<BidResponse[]>([])
   const [loadingBids, setLoadingBids] = useState(false)
+  const [isFavorite, setIsFavorite] = useState(false)
   
   // 실시간 입찰 내역 (웹소켓 사용 시)
   // const [realtimeBids, setRealtimeBids] = useState<BidPlacedEvent[]>([])
@@ -65,18 +67,11 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
         if (isNaN(auctionId)) {
           throw new Error("유효하지 않은 경매 ID입니다")
         }
+        
+        // 상태 체크 및 업데이트
+        await auctionApi.checkAndUpdateAuctionStatus(auctionId)
+        
         let data = await auctionApi.getAuction(auctionId)
-        
-        // 시작일이 지났는데 SCHEDULED 상태면 RUNNING으로 업데이트
-        const now = new Date()
-        const startTime = new Date(data.startAt)
-        if (data.status === "SCHEDULED" && !isNaN(startTime.getTime()) && startTime <= now) {
-          // 경매가 시작되었으므로 상태 업데이트
-          data = await auctionApi.updateAuction(auctionId, {
-            status: "RUNNING" as const,
-          })
-        }
-        
         setAuction(data)
         setBidAmount(data.currentPrice + data.bidStep)
         
@@ -97,6 +92,53 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
 
     loadAuction()
   }, [id])
+
+  // 경매 상태 주기적 체크 (30초마다)
+  useEffect(() => {
+    if (!auction) return
+
+    const checkStatus = async () => {
+      const auctionId = parseInt(id, 10)
+      if (isNaN(auctionId)) return
+
+      const updatedAuction = await auctionApi.checkAndUpdateAuctionStatus(auctionId)
+      if (updatedAuction && updatedAuction.status !== auction.status) {
+        // 상태가 변경되었으면 경매 정보 새로고침
+        setAuction(updatedAuction)
+        setBidAmount(updatedAuction.currentPrice + updatedAuction.bidStep)
+        
+        // 입찰 내역도 새로고침
+        try {
+          const bids = await auctionApi.getBidsByAuction(auctionId)
+          setBidHistory(bids)
+        } catch (err) {
+          console.error("입찰 내역 로드 실패:", err)
+        }
+
+        // 상태 변경 알림
+        if (updatedAuction.status === 'ENDED') {
+          toast.info("경매가 종료되었습니다")
+        } else if (updatedAuction.status === 'RUNNING') {
+          toast.info("경매가 시작되었습니다")
+        }
+      }
+    }
+
+    // 즉시 한 번 체크
+    checkStatus()
+
+    // 30초마다 체크
+    const interval = setInterval(checkStatus, 30000)
+
+    return () => clearInterval(interval)
+  }, [id, auction])
+
+  // 찜하기 상태 동기화
+  useEffect(() => {
+    if (auction) {
+      setIsFavorite(isInWishlist(auction.id, "auction"))
+    }
+  }, [auction])
 
   // 남은 시간 계산
   useEffect(() => {
@@ -206,14 +248,23 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
       
       // Mock API 사용 (웹소켓 미사용 시)
       const updatedAuction = await auctionApi.placeBid(auctionId, bidAmount)
-      setAuction(updatedAuction)
-      setBidAmount(updatedAuction.currentPrice + updatedAuction.bidStep)
+      
+      // 입찰 후 상태 체크 (종료 시간이 지났을 수 있음)
+      const finalAuction = await auctionApi.checkAndUpdateAuctionStatus(auctionId)
+      const auctionToUse = finalAuction || updatedAuction
+      
+      setAuction(auctionToUse)
+      setBidAmount(auctionToUse.currentPrice + auctionToUse.bidStep)
       
       // 입찰 내역 새로고침
       const bids = await auctionApi.getBidsByAuction(auctionId)
       setBidHistory(bids)
       
-      toast.success(`입찰이 완료되었습니다! 현재 입찰가: ${updatedAuction.currentPrice.toLocaleString()}원`)
+      if (auctionToUse.status === 'ENDED') {
+        toast.success(`입찰이 완료되었습니다! 경매가 종료되었습니다. (최종가: ${auctionToUse.currentPrice.toLocaleString()}원)`)
+      } else {
+        toast.success(`입찰이 완료되었습니다! 현재 입찰가: ${auctionToUse.currentPrice.toLocaleString()}원`)
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "입찰 중 오류가 발생했습니다")
     } finally {
@@ -322,9 +373,22 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
               <p className="mb-4 text-pretty text-lg text-muted-foreground">{auction.description}</p>
 
               <div className="flex flex-wrap gap-3">
-                <Button variant="outline" size="sm">
-                  <Heart className="mr-2 size-4" />
-                  관심 등록
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    if (!auction) return
+                    const newState = toggleWishlist(auction.id, "auction")
+                    setIsFavorite(newState)
+                    if (newState) {
+                      toast.success("찜하기에 추가되었습니다")
+                    } else {
+                      toast.info("찜하기에서 제거되었습니다")
+                    }
+                  }}
+                >
+                  <Heart className={`mr-2 size-4 ${isFavorite ? "fill-red-500 text-red-500" : ""}`} />
+                  찜하기
                 </Button>
                 <Button variant="outline" size="sm">
                   <Share2 className="mr-2 size-4" />

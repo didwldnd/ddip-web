@@ -64,7 +64,7 @@ function ProfileTabs({ defaultTab }: { defaultTab: string }) {
       setMySupports(supports)
       setMyBids(bids)
       
-      // 위시리스트 항목 로드
+      // 찜한 항목 로드
       const wishlist = getWishlist()
       const favoriteProjectIds = wishlist
         .filter(item => item.type === "project")

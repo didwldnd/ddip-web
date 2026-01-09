@@ -21,6 +21,7 @@ import { RewardCard } from "@/src/components/reward-card"
 import { toast } from "sonner"
 import { useAuth } from "@/src/contexts/auth-context"
 import { ProtectedRoute } from "@/src/components/protected-route"
+import { isInWishlist, toggleWishlist } from "@/src/lib/wishlist"
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -33,6 +34,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [supportAmount, setSupportAmount] = useState<string>("")
   const [isSupporting, setIsSupporting] = useState(false)
   const [timeLeft, setTimeLeft] = useState<string>("")
+  const [isFavorite, setIsFavorite] = useState(false)
 
   // 프로젝트 데이터 로드
   useEffect(() => {
@@ -45,6 +47,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           throw new Error("유효하지 않은 프로젝트 ID입니다")
         }
         console.log("프로젝트 로드 시작:", projectId)
+        
+        // 상태 체크 및 업데이트
+        await projectApi.checkAndUpdateProjectStatus(projectId)
+        
         const data = await projectApi.getProject(projectId)
         console.log("프로젝트 로드 성공:", {
           id: data.id,
@@ -80,6 +86,46 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
     loadProject()
   }, [id])
+
+  // 프로젝트 상태 주기적 체크 (30초마다)
+  useEffect(() => {
+    if (!project) return
+
+    const checkStatus = async () => {
+      const projectId = parseInt(id, 10)
+      if (isNaN(projectId)) return
+
+      const updatedProject = await projectApi.checkAndUpdateProjectStatus(projectId)
+      if (updatedProject && updatedProject.status !== project.status) {
+        // 상태가 변경되었으면 프로젝트 정보 새로고침
+        setProject(updatedProject)
+
+        // 상태 변경 알림
+        if (updatedProject.status === 'SUCCESS') {
+          toast.success("프로젝트가 성공적으로 완료되었습니다!")
+        } else if (updatedProject.status === 'FAILED') {
+          toast.info("프로젝트가 실패했습니다")
+        } else if (updatedProject.status === 'OPEN') {
+          toast.info("프로젝트가 시작되었습니다")
+        }
+      }
+    }
+
+    // 즉시 한 번 체크
+    checkStatus()
+
+    // 30초마다 체크
+    const interval = setInterval(checkStatus, 30000)
+
+    return () => clearInterval(interval)
+  }, [id, project])
+
+  // 찜하기 상태 동기화
+  useEffect(() => {
+    if (project) {
+      setIsFavorite(isInWishlist(project.id, "project"))
+    }
+  }, [project])
 
   // 후원하기 핸들러
   const handleSupport = async () => {
@@ -125,9 +171,15 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       setSupportAmount("")
       setSelectedRewardTier(null)
       
-      // 프로젝트 정보 새로고침
-      const updatedProject = await projectApi.getProject(project.id)
-      setProject(updatedProject)
+      // 후원 후 상태 체크 (종료 시간이 지났거나 목표 달성했을 수 있음)
+      const finalProject = await projectApi.checkAndUpdateProjectStatus(project.id)
+      const projectToUse = finalProject || await projectApi.getProject(project.id)
+      setProject(projectToUse)
+      
+      // 상태 변경 알림
+      if (projectToUse.status === 'SUCCESS' && project.status === 'OPEN') {
+        toast.success("축하합니다! 프로젝트가 목표 금액을 달성했습니다!")
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "후원에 실패했습니다")
     } finally {
@@ -264,9 +316,22 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               <p className="mb-4 text-pretty text-lg text-muted-foreground">{project.description}</p>
 
               <div className="flex flex-wrap gap-3">
-                <Button variant="outline" size="sm">
-                  <Heart className="mr-2 size-4" />
-                  좋아요
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    if (!project) return
+                    const newState = toggleWishlist(project.id, "project")
+                    setIsFavorite(newState)
+                    if (newState) {
+                      toast.success("찜하기에 추가되었습니다")
+                    } else {
+                      toast.info("찜하기에서 제거되었습니다")
+                    }
+                  }}
+                >
+                  <Heart className={`mr-2 size-4 ${isFavorite ? "fill-red-500 text-red-500" : ""}`} />
+                  찜하기
                 </Button>
                 <Button variant="outline" size="sm">
                   <Share2 className="mr-2 size-4" />

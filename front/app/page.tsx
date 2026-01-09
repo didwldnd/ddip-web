@@ -20,6 +20,13 @@ export default function HomePage() {
     const loadData = async () => {
       try {
         setLoading(true)
+        
+        // 모든 프로젝트와 경매의 상태 일괄 체크
+        await Promise.all([
+          projectApi.checkAllProjectsStatus(),
+          auctionApi.checkAllAuctionsStatus(),
+        ])
+        
         // 프로젝트와 경매 데이터를 동시에 로드
         // 등록된 모든 프로젝트/경매 가져오기 (상태 필터 없이)
         const [projectsData, auctionsData] = await Promise.all([
@@ -36,6 +43,34 @@ export default function HomePage() {
     }
 
     loadData()
+  }, [])
+
+  // 상태 주기적 체크 (1분마다)
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        // 모든 프로젝트와 경매의 상태 일괄 체크
+        await Promise.all([
+          projectApi.checkAllProjectsStatus(),
+          auctionApi.checkAllAuctionsStatus(),
+        ])
+        
+        // 데이터 새로고침
+        const [projectsData, auctionsData] = await Promise.all([
+          projectApi.getProjects({ limit: 20 }),
+          auctionApi.getAuctions({ limit: 20 }),
+        ])
+        setProjects(projectsData)
+        setAuctions(auctionsData)
+      } catch (error) {
+        console.error("상태 체크 실패:", error)
+      }
+    }
+
+    // 1분마다 체크
+    const interval = setInterval(checkStatus, 60000)
+
+    return () => clearInterval(interval)
   }, [])
 
   // 프로젝트 데이터를 ProjectCard props로 변환

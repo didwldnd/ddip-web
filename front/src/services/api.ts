@@ -598,6 +598,63 @@ export const projectApi = {
     }
     return supports.sort((a, b) => b.id - a.id); // 최신순
   },
+
+  /**
+   * 프로젝트 상태 자동 체크 및 업데이트
+   * 종료 시간이 지났고 OPEN 상태면 목표 달성 여부로 SUCCESS/FAILED 전이
+   */
+  checkAndUpdateProjectStatus: async (projectId: number): Promise<ProjectResponse | null> => {
+    const project = projectStore.get(projectId);
+    if (!project) {
+      return null;
+    }
+
+    const now = new Date();
+    const endTime = new Date(project.endAt);
+    
+    // 종료 시간이 지났고 OPEN 상태인 경우
+    if (project.status === 'OPEN' && now >= endTime) {
+      const newStatus: 'SUCCESS' | 'FAILED' = project.currentAmount >= project.targetAmount ? 'SUCCESS' : 'FAILED';
+      
+      const updatedProject = {
+        ...project,
+        status: newStatus,
+      };
+      
+      projectStore.set(projectId, updatedProject);
+      saveProjectsToStorage();
+      
+      console.log(`프로젝트 ${projectId} 상태 전이: OPEN → ${newStatus}`);
+      return updatedProject;
+    }
+
+    // 시작 시간이 지났고 DRAFT 상태인 경우 OPEN으로 전이
+    const startTime = new Date(project.startAt);
+    if (project.status === 'DRAFT' && now >= startTime) {
+      const updatedProject = {
+        ...project,
+        status: 'OPEN' as const,
+      };
+      
+      projectStore.set(projectId, updatedProject);
+      saveProjectsToStorage();
+      
+      console.log(`프로젝트 ${projectId} 상태 전이: DRAFT → OPEN`);
+      return updatedProject;
+    }
+
+    return project;
+  },
+
+  /**
+   * 모든 프로젝트 상태 일괄 체크 및 업데이트
+   */
+  checkAllProjectsStatus: async (): Promise<void> => {
+    const projects = Array.from(projectStore.values());
+    for (const project of projects) {
+      await projectApi.checkAndUpdateProjectStatus(project.id);
+    }
+  },
 };
 
 // API 함수들 - 경매 관련
@@ -845,6 +902,75 @@ export const auctionApi = {
       return bids.filter(bid => bid.bidder.id === userId);
     }
     return bids.sort((a, b) => b.id - a.id); // 최신순
+  },
+
+  /**
+   * 경매 상태 자동 체크 및 업데이트
+   * 시작 시간이 지났고 SCHEDULED 상태면 RUNNING으로 전이
+   * 종료 시간이 지났고 RUNNING 상태면 ENDED로 전이하고 낙찰자 확정
+   */
+  checkAndUpdateAuctionStatus: async (auctionId: number): Promise<AuctionResponse | null> => {
+    const auction = auctionStore.get(auctionId);
+    if (!auction) {
+      return null;
+    }
+
+    const now = new Date();
+    const startTime = new Date(auction.startAt);
+    const endTime = new Date(auction.endAt);
+    
+    // 시작 시간이 지났고 SCHEDULED 상태인 경우 RUNNING으로 전이
+    if (auction.status === 'SCHEDULED' && now >= startTime && now < endTime) {
+      const updatedAuction = {
+        ...auction,
+        status: 'RUNNING' as const,
+      };
+      
+      auctionStore.set(auctionId, updatedAuction);
+      saveAuctionsToStorage();
+      
+      console.log(`경매 ${auctionId} 상태 전이: SCHEDULED → RUNNING`);
+      return updatedAuction;
+    }
+
+    // 종료 시간이 지났고 RUNNING 상태인 경우 ENDED로 전이하고 낙찰자 확정
+    if (auction.status === 'RUNNING' && now >= endTime) {
+      // 최고 입찰자 찾기
+      const bids = Array.from(bidStore.values())
+        .filter(bid => bid.auctionId === auctionId)
+        .sort((a, b) => b.amount - a.amount); // 금액 내림차순
+      
+      const winner = bids.length > 0 ? bids[0].bidder : null;
+      const finalPrice = bids.length > 0 ? bids[0].amount : auction.currentPrice;
+      
+      const updatedAuction = {
+        ...auction,
+        status: 'ENDED' as const,
+        currentPrice: finalPrice,
+        winner: winner,
+      };
+      
+      auctionStore.set(auctionId, updatedAuction);
+      saveAuctionsToStorage();
+      
+      console.log(`경매 ${auctionId} 상태 전이: RUNNING → ENDED`, {
+        winner: winner?.id,
+        finalPrice,
+      });
+      return updatedAuction;
+    }
+
+    return auction;
+  },
+
+  /**
+   * 모든 경매 상태 일괄 체크 및 업데이트
+   */
+  checkAllAuctionsStatus: async (): Promise<void> => {
+    const auctions = Array.from(auctionStore.values());
+    for (const auction of auctions) {
+      await auctionApi.checkAndUpdateAuctionStatus(auction.id);
+    }
   },
 };
 
