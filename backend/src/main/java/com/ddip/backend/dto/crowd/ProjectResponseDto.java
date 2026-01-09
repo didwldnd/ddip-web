@@ -42,6 +42,11 @@ public class ProjectResponseDto {
                 .categoryPath(project.getCategoryPath())
                 .tags(project.getTags())
                 .summary(project.getSummary())
+                .rewardTiers(
+                        project.getRewardTiers().stream()
+                                .map(RewardTierResponseDto::from)
+                                .toList()
+                )
                 .build();
     }
 

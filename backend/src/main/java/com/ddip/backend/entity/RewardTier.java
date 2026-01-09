@@ -45,4 +45,11 @@ public class RewardTier extends BaseTimeEntity{
     @OneToMany(mappedBy = "rewardTier")
     private List<Pledge> pledges = new ArrayList<>();
 
+    public void increaseSoldQuantity() {
+        if (limitQuantity != null && soldQuantity >= limitQuantity) {
+            throw new IllegalStateException("리워드 수량이 모두 소진되었습니다.");
+        }
+        this.soldQuantity = this.soldQuantity + 1;
+    }
+
 }

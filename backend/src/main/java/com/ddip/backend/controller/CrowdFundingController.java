@@ -1,8 +1,6 @@
 package com.ddip.backend.controller;
 
-import com.ddip.backend.dto.crowd.ProjectRequestDto;
-import com.ddip.backend.dto.crowd.ProjectResponseDto;
-import com.ddip.backend.dto.crowd.ProjectUpdateRequestDto;
+import com.ddip.backend.dto.crowd.*;
 import com.ddip.backend.security.auth.CustomUserDetails;
 import com.ddip.backend.service.CrowdFundingService;
 import jakarta.validation.Valid;
@@ -19,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 public class CrowdFundingController {
 
     private final CrowdFundingService crowdFundingService;
+//    private final PledgeService pledgeService;
 
     @PostMapping
     public ResponseEntity<?> createCrowdFunding(@AuthenticationPrincipal CustomUserDetails customUserDetails,
@@ -50,5 +49,13 @@ public class CrowdFundingController {
         crowdFundingService.deleteProject(projectId, userId);
         return ResponseEntity.ok().build();
     }
+
+//    @PostMapping("/{projectId}/pledges")
+//    public ResponseEntity<PledgeResponseDto> createPledge(@AuthenticationPrincipal CustomUserDetails customUserDetails,
+//                                                          @PathVariable Long projectId,
+//                                                          @Valid @RequestBody PledgeCreateRequestDto requestDto) {
+//        Long userId = customUserDetails.getUserId();
+//        PledgeResponseDto responseDto = pledgeService.createPledge(userId, projectId, requestDto);
+//    }
 
 }

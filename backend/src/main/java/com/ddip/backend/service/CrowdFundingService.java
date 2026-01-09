@@ -22,6 +22,9 @@ public class CrowdFundingService {
     private final ProjectRepository projectRepository;
     private final UserService userService;
 
+    /**
+     *  Crowdfunding 프로젝트 생성
+     **/
     public long createProject(ProjectRequestDto requestDto, Long userId) {
 
         if (requestDto.getRewardTiers() == null || requestDto.getRewardTiers().isEmpty()) {
@@ -44,10 +47,13 @@ public class CrowdFundingService {
         }
 
         projectRepository.save(project);
+        log.info("successfully created project with id {}", project.getId());
         return project.getId();
     }
 
-
+    /**
+     *  Crowdfunding 프로젝트 가져오기
+     **/
     @Transactional(readOnly = true)
     public ProjectResponseDto getProject(Long projectId) {
         Project project = projectRepository.findByIdWithRewardTiers(projectId)
@@ -56,7 +62,9 @@ public class CrowdFundingService {
         return ProjectResponseDto.from(project);
     }
 
-
+    /**
+     *  Crowdfunding 프로젝트 삭제
+     **/
     public void deleteProject(Long projectId, Long userId) {
         User user = userService.getUser(userId);
 
@@ -68,6 +76,7 @@ public class CrowdFundingService {
             throw new IllegalStateException("본인 프로젝트만 삭제할 수 있습니다.");
         }
 
+        log.info("successfully deleted project with id {}", projectId);
         project.cancel();
     }
 

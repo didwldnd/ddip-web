@@ -30,8 +30,11 @@ public class Pledge extends BaseTimeEntity {
     @JoinColumn(name = "reward_tier_id")
     private RewardTier rewardTier; // null 가능
 
-    @Column(nullable = false)
+    @Column(name = "amount", nullable = false)
     private Long amount;
+
+    @Column(name = "donate_price")
+    private Long donatePrice;
 
     @Enumerated(EnumType.STRING)
     @Column(length = 20, nullable = false)
