@@ -24,7 +24,6 @@ public class JwtAuthenticationFilter extends UsernamePasswordAuthenticationFilte
     private final JwtUtils jwtUtils;
     private final TokenBlackListService tokenBlackListService;
 
-
     public JwtAuthenticationFilter(AuthenticationManager authenticationManager, TokenBlackListService tokenBlackList, JwtUtils jwtUtils) {
         this.authenticationManager = authenticationManager;
         this.jwtUtils = jwtUtils;
