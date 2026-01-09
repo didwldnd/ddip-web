@@ -94,9 +94,11 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
     loadAuction()
   }, [id])
 
-  // 경매 상태 주기적 체크 (30초마다)
+  // 경매 상태 주기적 체크 (종료 시간에 따라 동적으로 조정)
   useEffect(() => {
     if (!auction) return
+
+    let timeoutId: NodeJS.Timeout | null = null
 
     const checkStatus = async () => {
       const auctionId = parseInt(id, 10)
@@ -123,15 +125,58 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
           toast.info("경매가 시작되었습니다")
         }
       }
+
+      // 다음 체크 주기 계산
+      const now = new Date().getTime()
+      const startTime = new Date(auction.startAt).getTime()
+      const endTime = new Date(auction.endAt).getTime()
+      
+      // 시작 시간까지의 거리
+      const distanceToStart = startTime - now
+      // 종료 시간까지의 거리
+      const distanceToEnd = endTime - now
+      
+      // 가장 가까운 이벤트 시간까지의 거리
+      const minDistance = Math.min(
+        distanceToStart > 0 ? distanceToStart : Infinity,
+        distanceToEnd > 0 ? distanceToEnd : Infinity
+      )
+      
+      let checkInterval: number
+      
+      // 1분 미만: 1초마다 (정확한 타이밍)
+      if (minDistance < 60 * 1000) {
+        checkInterval = 1000
+      }
+      // 5분 미만: 2초마다
+      else if (minDistance < 5 * 60 * 1000) {
+        checkInterval = 2000
+      }
+      // 10분 미만: 5초마다
+      else if (minDistance < 10 * 60 * 1000) {
+        checkInterval = 5000
+      }
+      // 30분 미만: 10초마다
+      else if (minDistance < 30 * 60 * 1000) {
+        checkInterval = 10000
+      }
+      // 그 외: 30초마다
+      else {
+        checkInterval = 30000
+      }
+      
+      // 다음 체크 예약
+      timeoutId = setTimeout(checkStatus, checkInterval)
     }
 
     // 즉시 한 번 체크
     checkStatus()
 
-    // 30초마다 체크
-    const interval = setInterval(checkStatus, 30000)
-
-    return () => clearInterval(interval)
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
+    }
   }, [id, auction])
 
   // 찜하기 상태 동기화
@@ -183,7 +228,12 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
         }
       } else {
         if (showSeconds) {
-          setTimeLeft(`${minutes}분 ${seconds}초`)
+          // 1분 미만일 때는 초만 표시
+          if (minutes === 0) {
+            setTimeLeft(`${seconds}초`)
+          } else {
+            setTimeLeft(`${minutes}분 ${seconds}초`)
+          }
         } else {
           setTimeLeft(`${minutes}분`)
         }
@@ -789,7 +839,13 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                                   )}
                                 </div>
                                 <div className="text-xs text-muted-foreground">
-                                  {formatRelativeTime(bid.createdAt)}
+                                  {new Date(bid.createdAt).toLocaleString("ko-KR", {
+                                    month: "short",
+                                    day: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                    second: "2-digit",
+                                  })}
                                 </div>
                               </div>
                             </div>
