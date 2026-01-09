@@ -853,11 +853,22 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                               <div className="font-semibold text-lg">
                                 {bid.amount.toLocaleString()}원
                               </div>
-                              {index > 0 && (
-                                <div className="text-xs text-muted-foreground">
-                                  +{(bid.amount - bidHistory[index - 1].amount).toLocaleString()}원
-                                </div>
-                              )}
+                              {index < bidHistory.length - 1 && (() => {
+                                // 다음 입찰가 (더 오래된 입찰, index가 클수록 오래됨)
+                                // 입찰 내역이 최신순으로 정렬되어 있으므로, index가 큰 것이 더 오래된 입찰
+                                const nextBid = bidHistory[index + 1]
+                                // 증가액 계산 (현재 입찰가 - 다음 입찰가(더 오래된 입찰))
+                                const increase = bid.amount - nextBid.amount
+                                // 입찰은 항상 증가해야 하므로 양수만 표시
+                                if (increase > 0) {
+                                  return (
+                                    <div className="text-xs font-medium text-green-600 dark:text-green-400">
+                                      +{increase.toLocaleString()}원
+                                    </div>
+                                  )
+                                }
+                                return null
+                              })()}
                             </div>
                           </div>
                         )
