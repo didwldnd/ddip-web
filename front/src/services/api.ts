@@ -822,6 +822,45 @@ export const projectApi = {
       await projectApi.checkAndUpdateProjectStatus(project.id);
     }
   },
+
+  /**
+   * 프로젝트 검색
+   */
+  searchProjects: async (query: string, params?: {
+    status?: ProjectResponse['status'];
+    limit?: number;
+  }): Promise<ProjectResponse[]> => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    if (!query || query.trim() === '') {
+      return [];
+    }
+
+    const searchTerm = query.toLowerCase().trim();
+    const storedProjects = Array.from(projectStore.values());
+
+    // 제목, 설명, 태그에서 검색
+    let filteredProjects = storedProjects.filter(project => {
+      const titleMatch = project.title.toLowerCase().includes(searchTerm);
+      const descriptionMatch = project.description.toLowerCase().includes(searchTerm);
+      const tagsMatch = project.tags?.toLowerCase().includes(searchTerm) || false;
+      const summaryMatch = project.summary?.toLowerCase().includes(searchTerm) || false;
+      
+      return titleMatch || descriptionMatch || tagsMatch || summaryMatch;
+    });
+
+    // 상태 필터링
+    if (params?.status) {
+      filteredProjects = filteredProjects.filter(project => project.status === params.status);
+    }
+
+    // 최신순 정렬
+    filteredProjects.sort((a, b) => b.id - a.id);
+
+    // limit 적용
+    const limit = params?.limit || 50;
+    return filteredProjects.slice(0, limit);
+  },
 };
 
 // API 함수들 - 경매 관련
@@ -1178,6 +1217,45 @@ export const auctionApi = {
     for (const auction of auctions) {
       await auctionApi.checkAndUpdateAuctionStatus(auction.id);
     }
+  },
+
+  /**
+   * 경매 검색
+   */
+  searchAuctions: async (query: string, params?: {
+    status?: AuctionResponse['status'];
+    limit?: number;
+  }): Promise<AuctionResponse[]> => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    if (!query || query.trim() === '') {
+      return [];
+    }
+
+    const searchTerm = query.toLowerCase().trim();
+    const storedAuctions = Array.from(auctionStore.values());
+
+    // 제목, 설명, 태그에서 검색
+    let filteredAuctions = storedAuctions.filter(auction => {
+      const titleMatch = auction.title.toLowerCase().includes(searchTerm);
+      const descriptionMatch = auction.description.toLowerCase().includes(searchTerm);
+      const tagsMatch = auction.tags?.toLowerCase().includes(searchTerm) || false;
+      const summaryMatch = auction.summary?.toLowerCase().includes(searchTerm) || false;
+      
+      return titleMatch || descriptionMatch || tagsMatch || summaryMatch;
+    });
+
+    // 상태 필터링
+    if (params?.status) {
+      filteredAuctions = filteredAuctions.filter(auction => auction.status === params.status);
+    }
+
+    // 최신순 정렬
+    filteredAuctions.sort((a, b) => b.id - a.id);
+
+    // limit 적용
+    const limit = params?.limit || 50;
+    return filteredAuctions.slice(0, limit);
   },
 };
 
