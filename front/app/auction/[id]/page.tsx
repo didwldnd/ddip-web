@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/src/components/ui/ta
 import { AlertCircle, Clock, Gavel, Heart, Share2, MapPin, Loader2, ChevronLeft, ChevronRight, Edit, X } from "lucide-react"
 import Image from "next/image"
 import { useState, useEffect, use, useRef } from "react"
+import { useRouter } from "next/navigation"
 import { Alert, AlertDescription } from "@/src/components/ui/alert"
 import { auctionApi } from "@/src/services/api"
 import { AuctionResponse } from "@/src/types/api"
@@ -29,6 +30,7 @@ import { canEditAuction, canCancelAuction, canBidAuction, isAuctionSeller } from
 
 export default function AuctionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
+  const router = useRouter()
   const { user } = useAuth()
   const [auction, setAuction] = useState<AuctionResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -528,6 +530,30 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                   <Share2 className="mr-2 size-4" />
                   공유하기
                 </Button>
+                
+                {/* 판매자 전용 버튼 */}
+                {canEditAuction(auction, user) && (
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      router.push(`/auction/${auction.id}/edit`)
+                    }}
+                  >
+                    <Edit className="mr-2 size-4" />
+                    수정하기
+                  </Button>
+                )}
+                {canCancelAuction(auction, user) && (
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={handleCancelAuction}
+                  >
+                    <X className="mr-2 size-4" />
+                    취소하기
+                  </Button>
+                )}
               </div>
             </div>
 

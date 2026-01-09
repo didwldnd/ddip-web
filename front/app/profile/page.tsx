@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/src/components/ui/avatar"
 import { Separator } from "@/src/components/ui/separator"
 import { Loader2, Calendar, TrendingUp, Gavel, Heart, Package, Edit, X } from "lucide-react"
 import { useState, useEffect, Suspense } from "react"
-import { useSearchParams } from "next/navigation"
+import { useSearchParams, useRouter } from "next/navigation"
 import { useAuth } from "@/src/contexts/auth-context"
 import { ProtectedRoute } from "@/src/components/protected-route"
 import { projectApi, auctionApi } from "@/src/services/api"
@@ -21,6 +21,7 @@ import Image from "next/image"
 import { toast } from "sonner"
 
 function ProfileTabs({ defaultTab }: { defaultTab: string }) {
+  const router = useRouter()
   const { user, isAuthenticated, isLoading: authLoading } = useAuth()
   const [myProjects, setMyProjects] = useState<ProjectResponse[]>([])
   const [myAuctions, setMyAuctions] = useState<AuctionResponse[]>([])
@@ -253,8 +254,7 @@ function ProfileTabs({ defaultTab }: { defaultTab: string }) {
                                   variant="outline"
                                   size="sm"
                                   onClick={() => {
-                                    // TODO: 프로젝트 수정 페이지로 이동
-                                    toast.info("프로젝트 수정 기능은 준비 중입니다")
+                                    router.push(`/project/${project.id}/edit`)
                                   }}
                                 >
                                   <Edit className="size-4" />
@@ -372,8 +372,7 @@ function ProfileTabs({ defaultTab }: { defaultTab: string }) {
                                   variant="outline"
                                   size="sm"
                                   onClick={() => {
-                                    // TODO: 경매 수정 페이지로 이동
-                                    toast.info("경매 수정 기능은 준비 중입니다")
+                                    router.push(`/auction/${auction.id}/edit`)
                                   }}
                                 >
                                   <Edit className="size-4" />

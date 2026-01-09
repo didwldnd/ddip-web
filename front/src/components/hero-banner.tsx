@@ -5,13 +5,35 @@ import { Input } from "@/src/components/ui/input"
 import { Search, TrendingUp, Users, Zap } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useAuth } from "@/src/contexts/auth-context"
+import { projectApi } from "@/src/services/api"
+import { formatAmountShort } from "@/src/lib/format-amount"
 
 export function HeroBanner() {
   const router = useRouter()
   const { isAuthenticated } = useAuth()
   const [searchQuery, setSearchQuery] = useState("")
+  const [statistics, setStatistics] = useState({
+    totalAmount: 0,
+    totalParticipants: 0,
+    activeProjects: 0,
+  })
+  const [loadingStats, setLoadingStats] = useState(true)
+
+  useEffect(() => {
+    const loadStatistics = async () => {
+      try {
+        const stats = await projectApi.getStatistics()
+        setStatistics(stats)
+      } catch (error) {
+        console.error("통계 로드 실패:", error)
+      } finally {
+        setLoadingStats(false)
+      }
+    }
+    loadStatistics()
+  }, [])
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -75,21 +97,35 @@ export function HeroBanner() {
               <div className="mb-2 flex items-center justify-center">
                 <TrendingUp className="size-5 text-primary" />
               </div>
-              <div className="text-2xl font-bold">1,234억</div>
+              {loadingStats ? (
+                <div className="text-2xl font-bold text-muted-foreground">...</div>
+              ) : (
+                <div className="text-2xl font-bold">
+                  {statistics.totalAmount > 0 ? formatAmountShort(statistics.totalAmount) : "0"}
+                </div>
+              )}
               <div className="text-xs text-muted-foreground">누적 후원금액</div>
             </div>
             <div className="text-center">
               <div className="mb-2 flex items-center justify-center">
                 <Users className="size-5 text-primary" />
               </div>
-              <div className="text-2xl font-bold">12,345</div>
+              {loadingStats ? (
+                <div className="text-2xl font-bold text-muted-foreground">...</div>
+              ) : (
+                <div className="text-2xl font-bold">{statistics.totalParticipants.toLocaleString()}</div>
+              )}
               <div className="text-xs text-muted-foreground">참여자 수</div>
             </div>
             <div className="text-center">
               <div className="mb-2 flex items-center justify-center">
                 <Zap className="size-5 text-primary" />
               </div>
-              <div className="text-2xl font-bold">567</div>
+              {loadingStats ? (
+                <div className="text-2xl font-bold text-muted-foreground">...</div>
+              ) : (
+                <div className="text-2xl font-bold">{statistics.activeProjects.toLocaleString()}</div>
+              )}
               <div className="text-xs text-muted-foreground">진행 중인 프로젝트</div>
             </div>
           </div>

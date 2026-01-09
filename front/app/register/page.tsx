@@ -12,19 +12,24 @@ import { Alert, AlertDescription } from "@/src/components/ui/alert"
 import { AlertCircle, Loader2 } from "lucide-react"
 import { useAuth } from "@/src/contexts/auth-context"
 import { toast } from "sonner"
+import { Separator } from "@/src/components/ui/separator"
 
 export default function RegisterPage() {
   const router = useRouter()
-  const { register } = useAuth()
+  const { register, oauthLogin } = useAuth()
   const [formData, setFormData] = useState({
     email: "",
     password: "",
     confirmPassword: "",
-    name: "",
+    username: "",
     nickname: "",
-    phone: "",
+    phoneNumber: "",
+    account: "",
+    accountHolder: "",
+    bankType: "" as string | null,
   })
   const [isLoading, setIsLoading] = useState(false)
+  const [isOAuthLoading, setIsOAuthLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -39,7 +44,7 @@ export default function RegisterPage() {
     setError(null)
 
     // 유효성 검사
-    if (!formData.email || !formData.password || !formData.name || !formData.nickname) {
+    if (!formData.email || !formData.password || !formData.username || !formData.nickname || !formData.phoneNumber) {
       setError("필수 항목을 모두 입력해주세요")
       return
     }
@@ -59,9 +64,12 @@ export default function RegisterPage() {
       await register({
         email: formData.email,
         password: formData.password,
-        name: formData.name,
+        username: formData.username,
         nickname: formData.nickname,
-        phone: formData.phone || undefined,
+        phoneNumber: formData.phoneNumber,
+        account: formData.account || null,
+        accountHolder: formData.accountHolder || null,
+        bankType: formData.bankType || null,
       })
       toast.success("회원가입 성공!")
       router.push("/")
@@ -72,6 +80,19 @@ export default function RegisterPage() {
       toast.error(errorMessage)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleOAuthLogin = async (provider: 'google' | 'kakao' | 'naver') => {
+    try {
+      setIsOAuthLoading(provider)
+      await oauthLogin(provider)
+      // oauthLogin은 리다이렉트를 수행하므로 여기까지 도달하지 않음
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "OAuth 로그인에 실패했습니다"
+      setError(errorMessage)
+      toast.error(errorMessage)
+      setIsOAuthLoading(null)
     }
   }
 
@@ -136,13 +157,13 @@ export default function RegisterPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="name">이름 *</Label>
+                <Label htmlFor="username">이름 *</Label>
                 <Input
-                  id="name"
-                  name="name"
+                  id="username"
+                  name="username"
                   type="text"
                   placeholder="홍길동"
-                  value={formData.name}
+                  value={formData.username}
                   onChange={handleChange}
                   disabled={isLoading}
                   required
@@ -164,13 +185,62 @@ export default function RegisterPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="phone">전화번호</Label>
+                <Label htmlFor="phoneNumber">전화번호 *</Label>
                 <Input
-                  id="phone"
-                  name="phone"
+                  id="phoneNumber"
+                  name="phoneNumber"
                   type="tel"
                   placeholder="010-1234-5678"
-                  value={formData.phone}
+                  value={formData.phoneNumber}
+                  onChange={handleChange}
+                  disabled={isLoading}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="bankType">은행</Label>
+                <select
+                  id="bankType"
+                  name="bankType"
+                  value={formData.bankType || ""}
+                  onChange={(e) => setFormData(prev => ({ ...prev, bankType: e.target.value || null }))}
+                  disabled={isLoading}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="">선택 안함</option>
+                  <option value="KB">KB국민은행</option>
+                  <option value="SHINHAN">신한은행</option>
+                  <option value="WOORI">우리은행</option>
+                  <option value="HANA">하나은행</option>
+                  <option value="NH">NH농협은행</option>
+                  <option value="IBK">IBK기업은행</option>
+                  <option value="KAKAO">카카오뱅크</option>
+                  <option value="TOSS">토스뱅크</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="account">계좌번호</Label>
+                <Input
+                  id="account"
+                  name="account"
+                  type="text"
+                  placeholder="계좌번호"
+                  value={formData.account}
+                  onChange={handleChange}
+                  disabled={isLoading}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="accountHolder">예금주</Label>
+                <Input
+                  id="accountHolder"
+                  name="accountHolder"
+                  type="text"
+                  placeholder="예금주명"
+                  value={formData.accountHolder}
                   onChange={handleChange}
                   disabled={isLoading}
                 />
@@ -194,6 +264,93 @@ export default function RegisterPage() {
                 </Link>
               </div>
             </form>
+
+            <div className="mt-6">
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <Separator />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-background px-2 text-muted-foreground">
+                    또는
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-6 grid grid-cols-3 gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  disabled={isLoading || isOAuthLoading !== null}
+                  onClick={() => handleOAuthLogin('google')}
+                >
+                  {isOAuthLoading === 'google' ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <>
+                      <svg className="size-4 mr-2" viewBox="0 0 24 24">
+                        <path
+                          fill="currentColor"
+                          d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                        />
+                        <path
+                          fill="currentColor"
+                          d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                        />
+                        <path
+                          fill="currentColor"
+                          d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                        />
+                        <path
+                          fill="currentColor"
+                          d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                        />
+                      </svg>
+                      Google
+                    </>
+                  )}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full bg-[#FEE500] hover:bg-[#FEE500]/90 text-black border-[#FEE500]"
+                  disabled={isLoading || isOAuthLoading !== null}
+                  onClick={() => handleOAuthLogin('kakao')}
+                >
+                  {isOAuthLoading === 'kakao' ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <>
+                      <svg className="size-4 mr-2" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 3c5.799 0 10.5 3.664 10.5 8.185 0 4.52-4.701 8.184-10.5 8.184a13.5 13.5 0 0 1-1.727-.11l-4.408 2.883c-.501.265-.678.236-.472-.413l.892-3.678c-2.88-1.46-4.785-3.99-4.785-6.866C1.5 6.665 6.201 3 12 3z" />
+                      </svg>
+                      Kakao
+                    </>
+                  )}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full bg-[#03C75A] hover:bg-[#03C75A]/90 text-white border-[#03C75A]"
+                  disabled={isLoading || isOAuthLoading !== null}
+                  onClick={() => handleOAuthLogin('naver')}
+                >
+                  {isOAuthLoading === 'naver' ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <>
+                      <svg className="size-4 mr-2" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M16.273 12.845L7.376 0H0v24h7.726V11.156L16.624 24H24V0h-7.727v12.845z" />
+                      </svg>
+                      Naver
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </main>

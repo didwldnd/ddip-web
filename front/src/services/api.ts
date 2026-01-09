@@ -9,6 +9,8 @@ import {
   SupportRequest,
   SupportResponse,
   BidResponse,
+  OAuthProvider,
+  OAuthCallbackRequest,
 } from '@/src/types/api';
 import { tokenStorage } from '@/src/lib/auth';
 
@@ -377,8 +379,6 @@ const createMockProject = (
     creator,
     title: `프로젝트 제목 ${id}`,
     description: `프로젝트 ${id}에 대한 상세 설명입니다.`,
-    imageUrl,
-    imageUrls,
     // 기본값 설정 (overrides에 없을 경우에만 사용)
     targetAmount: overrides?.targetAmount ?? 1000000,
     currentAmount: overrides?.currentAmount ?? Math.floor(Math.random() * 1000000),
@@ -390,7 +390,7 @@ const createMockProject = (
     startAt,
     endAt,
     createdAt,
-    // imageUrl과 imageUrls는 위에서 처리한 값으로 덮어쓰기
+    // imageUrl과 imageUrls는 위에서 처리한 값으로 덮어쓰기 (overrides보다 나중에 설정하여 덮어쓰기)
     imageUrl,
     imageUrls,
   };
@@ -483,8 +483,6 @@ const createMockAuction = (
     seller,
     title: `경매 상품 ${id}`,
     description: `경매 상품 ${id}에 대한 상세 설명입니다.`,
-    imageUrl,
-    imageUrls,
     startPrice: 50000,
     currentPrice: 50000 + id * 10000,
     bidStep: 5000,
@@ -495,7 +493,7 @@ const createMockAuction = (
     // 날짜는 위에서 검증된 값으로 덮어쓰기 (overrides의 날짜가 유효하지 않을 수 있으므로)
     startAt,
     endAt,
-    // imageUrl과 imageUrls는 위에서 처리한 값으로 덮어쓰기
+    // imageUrl과 imageUrls는 위에서 처리한 값으로 덮어쓰기 (overrides보다 나중에 설정하여 덮어쓰기)
     imageUrl,
     imageUrls,
   };
@@ -821,6 +819,37 @@ export const projectApi = {
     for (const project of projects) {
       await projectApi.checkAndUpdateProjectStatus(project.id);
     }
+  },
+
+  /**
+   * 통계 정보 조회
+   */
+  getStatistics: async (): Promise<{
+    totalAmount: number;      // 누적 후원금액
+    totalParticipants: number; // 참여자 수
+    activeProjects: number;     // 진행 중인 프로젝트 수
+  }> => {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    const projects = Array.from(projectStore.values());
+    
+    // 누적 후원금액: 모든 프로젝트의 currentAmount 합계
+    const totalAmount = projects.reduce((sum, project) => sum + project.currentAmount, 0);
+    
+    // 참여자 수: 모든 프로젝트의 rewardTiers의 soldQuantity 합계
+    const totalParticipants = projects.reduce((sum, project) => {
+      const backers = project.rewardTiers.reduce((tierSum, tier) => tierSum + tier.soldQuantity, 0);
+      return sum + backers;
+    }, 0);
+    
+    // 진행 중인 프로젝트 수: status가 'OPEN'인 프로젝트 수
+    const activeProjects = projects.filter(project => project.status === 'OPEN').length;
+    
+    return {
+      totalAmount,
+      totalParticipants,
+      activeProjects,
+    };
   },
 
   /**
@@ -1317,23 +1346,66 @@ export const authApi = {
 
   /**
    * 회원가입
+   * POST /api/users/register
+   * 백엔드에서 UserResponseDto만 반환하므로, 회원가입 후 자동 로그인 처리
    */
   register: async (data: RegisterRequest): Promise<AuthResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
     
-    // Mock: 새 사용자 생성
-    const user = createMockUser(Date.now(), {
-      email: data.email,
-      name: data.name,
-      nickname: data.nickname,
-      phone: data.phone || null,
-    });
-    
-    return {
-      accessToken: `mock-access-token-${Date.now()}`,
-      refreshToken: `mock-refresh-token-${Date.now()}`,
-      user,
-    };
+    try {
+      // 회원가입 요청
+      const response = await fetch(`${API_BASE_URL}/api/users/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: data.email,
+          password: data.password,
+          username: data.username,
+          nickname: data.nickname,
+          phoneNumber: data.phoneNumber,
+          account: data.account || null,
+          accountHolder: data.accountHolder || null,
+          bankType: data.bankType || null,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: '회원가입 실패' }));
+        throw new Error(errorData.message || '회원가입에 실패했습니다');
+      }
+
+      // 백엔드에서 UserResponseDto 반환 (토큰 없음)
+      const userData = await response.json();
+      
+      // 백엔드가 토큰을 함께 반환하는 경우
+      if (userData.accessToken) {
+        return {
+          accessToken: userData.accessToken,
+          refreshToken: userData.refreshToken,
+          user: userData.user || userData,
+        };
+      }
+      
+      // 백엔드가 UserResponseDto만 반환하는 경우, 자동 로그인 처리
+      // 회원가입 후 자동 로그인을 위해 로그인 API 호출
+      const loginResponse = await authApi.login({
+        email: data.email,
+        password: data.password,
+      });
+      
+      return loginResponse;
+    } catch (error) {
+      console.error('회원가입 실패:', error);
+      
+      // 네트워크 오류인 경우 더 명확한 메시지 제공
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        throw new Error('백엔드 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인해주세요.');
+      }
+      
+      throw error instanceof Error ? error : new Error('회원가입에 실패했습니다');
+    }
   },
 
   /**
@@ -1369,5 +1441,73 @@ export const authApi = {
     }
     // 토큰이 없으면 에러 발생 (실제로는 인증 필요)
     throw new Error('로그인이 필요합니다');
+  },
+
+  /**
+   * OAuth 로그인 시작 (백엔드로 리다이렉트)
+   * @param provider OAuth 제공자 (google, kakao, naver)
+   * @returns OAuth 로그인 페이지 URL
+   */
+  oauthLogin: async (provider: OAuthProvider): Promise<string> => {
+    // 백엔드 API 엔드포인트
+    // 백엔드에서 OAuth 로그인 엔드포인트를 제공한다고 가정
+    // 예: GET /api/auth/oauth2/{provider} -> OAuth 제공자 페이지로 리다이렉트
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+    const redirectUrl = `${API_BASE_URL}/api/auth/oauth2/${provider}`;
+    
+    // 실제 백엔드 연동 시:
+    // 1. 백엔드가 OAuth 제공자 로그인 페이지로 리다이렉트
+    // 2. 사용자 인증 후 백엔드 콜백 URL로 돌아옴
+    // 3. 백엔드에서 토큰 발급 후 프론트엔드 콜백 URL로 리다이렉트
+    //    예: /auth/oauth/callback?provider={provider}&code={code}&state={state}
+    
+    return redirectUrl;
+  },
+
+  /**
+   * OAuth 콜백 처리 (백엔드에서 코드를 받아 토큰으로 교환)
+   * @param provider OAuth 제공자
+   * @param code OAuth 인증 코드
+   * @param state OAuth state (CSRF 방지용)
+   * @returns 인증 정보 (accessToken, refreshToken, user)
+   */
+  oauthCallback: async (
+    provider: OAuthProvider,
+    code: string,
+    state?: string
+  ): Promise<AuthResponse> => {
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+    
+    try {
+      // 백엔드 OAuth 콜백 엔드포인트 호출
+      // POST /api/auth/oauth2/callback/{provider}
+      // Body: { code: string, state?: string }
+      const response = await fetch(`${API_BASE_URL}/api/auth/oauth2/callback/${provider}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code, state }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'OAuth 인증 실패' }));
+        throw new Error(errorData.message || 'OAuth 인증에 실패했습니다');
+      }
+
+      const data = await response.json();
+      
+      // 백엔드 응답 형식에 맞게 변환
+      // 백엔드에서 AuthResponse 형식으로 반환한다고 가정
+      // 예: { accessToken: string, refreshToken?: string, user: UserResponse }
+      return {
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        user: data.user,
+      };
+    } catch (error) {
+      console.error('OAuth 콜백 처리 실패:', error);
+      throw error instanceof Error ? error : new Error('OAuth 인증에 실패했습니다');
+    }
   },
 };

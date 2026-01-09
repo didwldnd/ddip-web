@@ -14,6 +14,7 @@ import { Label } from "@/src/components/ui/label"
 import { Calendar, Clock, Heart, Share2, TrendingUp, MapPin, CheckCircle2, Loader2, AlertCircle, Edit, X } from "lucide-react"
 import Image from "next/image"
 import { useState, useEffect, use } from "react"
+import { useRouter } from "next/navigation"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Alert, AlertDescription } from "@/src/components/ui/alert"
 import { projectApi } from "@/src/services/api"
@@ -27,6 +28,7 @@ import { canEditProject, canCancelProject, canSupportProject, isProjectCreator }
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
+  const router = useRouter()
   const { isAuthenticated, user } = useAuth()
   const [project, setProject] = useState<ProjectResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -429,8 +431,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                     variant="outline" 
                     size="sm"
                     onClick={() => {
-                      // TODO: 프로젝트 수정 페이지로 이동
-                      toast.info("프로젝트 수정 기능은 준비 중입니다")
+                      router.push(`/project/${project.id}/edit`)
                     }}
                   >
                     <Edit className="mr-2 size-4" />

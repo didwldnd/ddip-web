@@ -73,3 +73,42 @@ export function isPastDate(dateString: string | null | undefined): boolean {
   }
   return date.getTime() < Date.now();
 }
+
+/**
+ * ISO 문자열을 datetime-local 형식으로 변환 (한국 시간 기준)
+ * @param isoString ISO 8601 형식의 날짜 문자열 (예: "2026-01-09T05:06:00.000Z")
+ * @returns datetime-local 형식 문자열 (예: "2026-01-09T14:06")
+ */
+export function isoToDatetimeLocal(isoString: string): string {
+  const date = new Date(isoString);
+  if (isNaN(date.getTime())) {
+    return "";
+  }
+  
+  // 로컬 시간대로 변환하여 datetime-local 형식으로 반환
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+/**
+ * ISO 문자열을 date 형식으로 변환 (한국 시간 기준)
+ * @param isoString ISO 8601 형식의 날짜 문자열
+ * @returns date 형식 문자열 (예: "2026-01-09")
+ */
+export function isoToDateLocal(isoString: string): string {
+  const date = new Date(isoString);
+  if (isNaN(date.getTime())) {
+    return "";
+  }
+  
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}`;
+}

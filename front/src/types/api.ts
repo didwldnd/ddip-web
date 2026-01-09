@@ -24,18 +24,32 @@ export interface LoginRequest {
   password: string;
 }
 
+// 은행 타입 enum (백엔드 BankType과 일치)
+export type BankType = 'KB' | 'SHINHAN' | 'WOORI' | 'HANA' | 'NH' | 'IBK' | 'KAKAO' | 'TOSS' | null;
+
 export interface RegisterRequest {
   email: string;
   password: string;
-  name: string;
+  username: string; // 백엔드의 username (프론트엔드에서는 name으로 표시)
   nickname: string;
-  phone?: string;
+  phoneNumber: string; // 백엔드의 phoneNumber (nullable = false이므로 필수)
+  account?: string | null; // 선택사항
+  accountHolder?: string | null; // 선택사항
+  bankType?: BankType; // 선택사항
 }
 
 export interface AuthResponse {
   accessToken: string;
   refreshToken?: string;
   user: UserResponse;
+}
+
+// OAuth 관련 타입
+export type OAuthProvider = 'google' | 'kakao' | 'naver'
+
+export interface OAuthCallbackRequest {
+  code: string;
+  state?: string;
 }
 
 // 프로젝트 관련 타입
@@ -83,6 +97,9 @@ export interface AuctionResponse {
   startAt: string;
   endAt: string;
   winner: UserResponse | null;
+  categoryPath?: string | null;
+  tags?: string | null;
+  summary?: string | null;
 }
 
 // 후원 관련 타입

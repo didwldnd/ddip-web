@@ -1,7 +1,7 @@
 "use client"
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react"
-import { UserResponse, AuthResponse } from "@/src/types/api"
+import { UserResponse, AuthResponse, RegisterRequest } from "@/src/types/api"
 import { authApi } from "@/src/services/api"
 import { tokenStorage } from "@/src/lib/auth"
 
@@ -10,15 +10,10 @@ interface AuthContextType {
   isLoading: boolean
   isAuthenticated: boolean
   login: (email: string, password: string) => Promise<void>
-  register: (data: {
-    email: string
-    password: string
-    name: string
-    nickname: string
-    phone?: string
-  }) => Promise<void>
+  register: (data: RegisterRequest) => Promise<void>
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
+  oauthLogin: (provider: 'google' | 'kakao' | 'naver') => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -122,6 +117,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const oauthLogin = async (provider: 'google' | 'kakao' | 'naver') => {
+    try {
+      // OAuth 로그인 URL 가져오기
+      const redirectUrl = await authApi.oauthLogin(provider)
+      
+      // 백엔드 OAuth 엔드포인트로 리다이렉트
+      // 백엔드에서 OAuth 제공자 페이지로 리다이렉트하고,
+      // 인증 후 콜백 URL로 돌아옴
+      window.location.href = redirectUrl
+    } catch (error) {
+      console.error("OAuth 로그인 실패:", error)
+      throw error
+    }
+  }
+
   const value: AuthContextType = {
     user,
     isLoading,
@@ -130,6 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     register,
     logout,
     refreshUser,
+    oauthLogin,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
