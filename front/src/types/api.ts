@@ -1,3 +1,12 @@
+// 권한 레벨 상수
+export const USER_ROLE_LEVEL = {
+  USER: 0,           // 일반 사용자
+  MODERATOR: 50,     // 중간 관리자
+  ADMIN: 100,        // 최고 관리자
+} as const
+
+export type UserRoleLevel = typeof USER_ROLE_LEVEL[keyof typeof USER_ROLE_LEVEL]
+
 // 공통 사용자 타입
 export interface UserResponse {
   id: number;
@@ -6,6 +15,7 @@ export interface UserResponse {
   nickname: string;
   profileImageUrl: string | null;
   phone: string | null;
+  roleLevel?: number; // 권한 레벨 (0: 일반 사용자, 50: 중간 관리자, 100: 최고 관리자)
 }
 
 // 인증 관련 타입
