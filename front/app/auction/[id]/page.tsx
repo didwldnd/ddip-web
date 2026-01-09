@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/src/components/ui/avatar"
 import { Input } from "@/src/components/ui/input"
 import { Label } from "@/src/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/src/components/ui/tabs"
-import { AlertCircle, Clock, Gavel, Heart, Share2, MapPin, Loader2, ChevronLeft, ChevronRight } from "lucide-react"
+import { AlertCircle, Clock, Gavel, Heart, Share2, MapPin, Loader2, ChevronLeft, ChevronRight, Edit, X } from "lucide-react"
 import Image from "next/image"
 import { useState, useEffect, use, useRef } from "react"
 import { Alert, AlertDescription } from "@/src/components/ui/alert"
@@ -21,6 +21,7 @@ import { BidResponse } from "@/src/types/api"
 import { maskUserId, formatRelativeTime } from "@/src/lib/user-utils"
 import { formatIncrement } from "@/src/lib/format-amount"
 import { isInWishlist, toggleWishlist } from "@/src/lib/wishlist"
+import { canEditAuction, canCancelAuction, canBidAuction, isAuctionSeller } from "@/src/lib/permissions"
 // 웹소켓 관련 (백엔드 준비되면 주석 해제)
 // import { useAuctionSocket } from "@/src/hooks/useAuctionSocket"
 // import { RealtimeBidList } from "@/src/components/realtime-bid-list"
@@ -262,12 +263,43 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
     })
   }
 
+  // 경매 취소 핸들러
+  const handleCancelAuction = async () => {
+    if (!auction) return
+    
+    if (!confirm("정말로 이 경매를 취소하시겠습니까? 취소된 경매는 복구할 수 없습니다.")) {
+      return
+    }
+
+    try {
+      await auctionApi.updateAuction(auction.id, {
+        status: "CANCELED" as const,
+      })
+      toast.success("경매가 취소되었습니다")
+      // 경매 정보 새로고침
+      const updatedAuction = await auctionApi.getAuction(auction.id)
+      setAuction(updatedAuction)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "경매 취소에 실패했습니다")
+    }
+  }
+
   const handleBid = async () => {
     if (!auction) return
 
     const auctionId = parseInt(id, 10)
     if (isNaN(auctionId)) {
       toast.error("유효하지 않은 경매 ID입니다")
+      return
+    }
+
+    // 권한 체크
+    if (!canBidAuction(auction, user)) {
+      if (isAuctionSeller(auction, user)) {
+        toast.error("자신의 경매에는 입찰할 수 없습니다")
+      } else {
+        toast.error("입찰할 수 없는 경매입니다")
+      }
       return
     }
 
@@ -634,7 +666,7 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
 
                   <Separator />
 
-                  {isLive && (
+                  {isLive && canBidAuction(auction, user) && (
                     <div className="space-y-3">
                       <Label htmlFor="bid-amount">입찰 금액</Label>
                       <div className="relative">
@@ -720,6 +752,17 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                           : actualStatus === "CANCELED"
                           ? "이 경매는 취소되었습니다"
                           : "경매가 아직 시작되지 않았습니다"}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  
+                  {isLive && !canBidAuction(auction, user) && (
+                    <Alert>
+                      <AlertCircle className="size-4" />
+                      <AlertDescription>
+                        {isAuctionSeller(auction, user)
+                          ? "자신의 경매에는 입찰할 수 없습니다"
+                          : "입찰할 수 없는 경매입니다"}
                       </AlertDescription>
                     </Alert>
                   )}

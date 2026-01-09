@@ -7,7 +7,7 @@ import { Badge } from "@/src/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/src/components/ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "@/src/components/ui/avatar"
 import { Separator } from "@/src/components/ui/separator"
-import { Loader2, Calendar, TrendingUp, Gavel, Heart, Package } from "lucide-react"
+import { Loader2, Calendar, TrendingUp, Gavel, Heart, Package, Edit, X } from "lucide-react"
 import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { useAuth } from "@/src/contexts/auth-context"
@@ -15,6 +15,7 @@ import { ProtectedRoute } from "@/src/components/protected-route"
 import { projectApi, auctionApi } from "@/src/services/api"
 import { ProjectResponse, AuctionResponse, SupportResponse, BidResponse } from "@/src/types/api"
 import { getWishlist } from "@/src/lib/wishlist"
+import { canEditProject, canCancelProject, canEditAuction, canCancelAuction } from "@/src/lib/permissions"
 import Link from "next/link"
 import Image from "next/image"
 import { toast } from "sonner"
@@ -170,64 +171,110 @@ function ProfileTabs({ defaultTab }: { defaultTab: string }) {
                     </CardContent>
                   </Card>
                 ) : (
-                  myProjects.map((project) => (
-                    <Card key={project.id} className="hover:shadow-md transition-shadow">
-                      <CardContent className="pt-6">
-                        <Link href={`/project/${project.id}`} className="block">
+                  myProjects.map((project) => {
+                    const handleCancelProject = async () => {
+                      if (!confirm("정말로 이 프로젝트를 취소하시겠습니까? 취소된 프로젝트는 복구할 수 없습니다.")) {
+                        return
+                      }
+
+                      try {
+                        await projectApi.updateProject(project.id, {
+                          status: "CANCELED" as const,
+                        })
+                        toast.success("프로젝트가 취소되었습니다")
+                        // 프로젝트 목록 새로고침
+                        const allProjects = await projectApi.getProjects()
+                        const myProjectsList = allProjects.filter(p => p.creator.id === user?.id)
+                        setMyProjects(myProjectsList)
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message : "프로젝트 취소에 실패했습니다")
+                      }
+                    }
+
+                    return (
+                      <Card key={project.id} className="hover:shadow-md transition-shadow">
+                        <CardContent className="pt-6">
                           <div className="flex gap-4">
-                            <div className="relative size-24 flex-shrink-0 rounded-lg overflow-hidden bg-muted">
-                              <Image
-                                src={project.imageUrl || "/placeholder.svg"}
-                                alt={project.title}
-                                fill
-                                className="object-cover"
-                              />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-start justify-between gap-4">
+                            <Link href={`/project/${project.id}`} className="flex-1">
+                              <div className="flex gap-4">
+                                <div className="relative size-24 flex-shrink-0 rounded-lg overflow-hidden bg-muted">
+                                  <Image
+                                    src={project.imageUrl || "/placeholder.svg"}
+                                    alt={project.title}
+                                    fill
+                                    className="object-cover"
+                                  />
+                                </div>
                                 <div className="flex-1 min-w-0">
-                                  <h3 className="font-semibold text-lg mb-1 truncate">{project.title}</h3>
-                                  <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
-                                    {project.description}
-                                  </p>
-                                  <div className="flex items-center gap-4 text-sm">
-                                    <span className="text-muted-foreground">
-                                      목표: {project.targetAmount.toLocaleString()}원
-                                    </span>
-                                    <span className="text-primary font-semibold">
-                                      현재: {project.currentAmount.toLocaleString()}원
-                                    </span>
-                                    <span className="text-muted-foreground">
-                                      {Math.round((project.currentAmount / project.targetAmount) * 100)}%
-                                    </span>
+                                  <div className="flex items-start justify-between gap-4">
+                                    <div className="flex-1 min-w-0">
+                                      <h3 className="font-semibold text-lg mb-1 truncate">{project.title}</h3>
+                                      <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
+                                        {project.description}
+                                      </p>
+                                      <div className="flex items-center gap-4 text-sm">
+                                        <span className="text-muted-foreground">
+                                          목표: {project.targetAmount.toLocaleString()}원
+                                        </span>
+                                        <span className="text-primary font-semibold">
+                                          현재: {project.currentAmount.toLocaleString()}원
+                                        </span>
+                                        <span className="text-muted-foreground">
+                                          {Math.round((project.currentAmount / project.targetAmount) * 100)}%
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <Badge
+                                      variant={
+                                        project.status === "OPEN"
+                                          ? "default"
+                                          : project.status === "SUCCESS"
+                                          ? "default"
+                                          : "secondary"
+                                      }
+                                    >
+                                      {project.status === "OPEN"
+                                        ? "진행 중"
+                                        : project.status === "SUCCESS"
+                                        ? "성공"
+                                        : project.status === "FAILED"
+                                        ? "실패"
+                                        : project.status === "CANCELED"
+                                        ? "취소됨"
+                                        : "초안"}
+                                    </Badge>
                                   </div>
                                 </div>
-                                <Badge
-                                  variant={
-                                    project.status === "OPEN"
-                                      ? "default"
-                                      : project.status === "SUCCESS"
-                                      ? "default"
-                                      : "secondary"
-                                  }
-                                >
-                                  {project.status === "OPEN"
-                                    ? "진행 중"
-                                    : project.status === "SUCCESS"
-                                    ? "성공"
-                                    : project.status === "FAILED"
-                                    ? "실패"
-                                    : project.status === "CANCELED"
-                                    ? "취소됨"
-                                    : "초안"}
-                                </Badge>
                               </div>
+                            </Link>
+                            <div className="flex flex-col gap-2">
+                              {canEditProject(project, user) && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    // TODO: 프로젝트 수정 페이지로 이동
+                                    toast.info("프로젝트 수정 기능은 준비 중입니다")
+                                  }}
+                                >
+                                  <Edit className="size-4" />
+                                </Button>
+                              )}
+                              {canCancelProject(project, user) && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={handleCancelProject}
+                                >
+                                  <X className="size-4" />
+                                </Button>
+                              )}
                             </div>
                           </div>
-                        </Link>
-                      </CardContent>
-                    </Card>
-                  ))
+                        </CardContent>
+                      </Card>
+                    )
+                  })
                 )}
               </div>
             </TabsContent>
@@ -248,59 +295,105 @@ function ProfileTabs({ defaultTab }: { defaultTab: string }) {
                     </CardContent>
                   </Card>
                 ) : (
-                  myAuctions.map((auction) => (
-                    <Card key={auction.id} className="hover:shadow-md transition-shadow">
-                      <CardContent className="pt-6">
-                        <Link href={`/auction/${auction.id}`} className="block">
+                  myAuctions.map((auction) => {
+                    const handleCancelAuction = async () => {
+                      if (!confirm("정말로 이 경매를 취소하시겠습니까? 취소된 경매는 복구할 수 없습니다.")) {
+                        return
+                      }
+
+                      try {
+                        await auctionApi.updateAuction(auction.id, {
+                          status: "CANCELED" as const,
+                        })
+                        toast.success("경매가 취소되었습니다")
+                        // 경매 목록 새로고침
+                        const allAuctions = await auctionApi.getAuctions()
+                        const myAuctionsList = allAuctions.filter(a => a.seller.id === user?.id)
+                        setMyAuctions(myAuctionsList)
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message : "경매 취소에 실패했습니다")
+                      }
+                    }
+
+                    return (
+                      <Card key={auction.id} className="hover:shadow-md transition-shadow">
+                        <CardContent className="pt-6">
                           <div className="flex gap-4">
-                            <div className="relative size-24 flex-shrink-0 rounded-lg overflow-hidden bg-muted">
-                              <Image
-                                src={auction.imageUrl || "/placeholder.svg"}
-                                alt={auction.title}
-                                fill
-                                className="object-cover"
-                              />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-start justify-between gap-4">
+                            <Link href={`/auction/${auction.id}`} className="flex-1">
+                              <div className="flex gap-4">
+                                <div className="relative size-24 flex-shrink-0 rounded-lg overflow-hidden bg-muted">
+                                  <Image
+                                    src={auction.imageUrl || "/placeholder.svg"}
+                                    alt={auction.title}
+                                    fill
+                                    className="object-cover"
+                                  />
+                                </div>
                                 <div className="flex-1 min-w-0">
-                                  <h3 className="font-semibold text-lg mb-1 truncate">{auction.title}</h3>
-                                  <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
-                                    {auction.description}
-                                  </p>
-                                  <div className="flex items-center gap-4 text-sm">
-                                    <span className="text-muted-foreground">
-                                      시작가: {auction.startPrice.toLocaleString()}원
-                                    </span>
-                                    <span className="text-primary font-semibold">
-                                      현재가: {auction.currentPrice.toLocaleString()}원
-                                    </span>
+                                  <div className="flex items-start justify-between gap-4">
+                                    <div className="flex-1 min-w-0">
+                                      <h3 className="font-semibold text-lg mb-1 truncate">{auction.title}</h3>
+                                      <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
+                                        {auction.description}
+                                      </p>
+                                      <div className="flex items-center gap-4 text-sm">
+                                        <span className="text-muted-foreground">
+                                          시작가: {auction.startPrice.toLocaleString()}원
+                                        </span>
+                                        <span className="text-primary font-semibold">
+                                          현재가: {auction.currentPrice.toLocaleString()}원
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <Badge
+                                      variant={
+                                        auction.status === "RUNNING"
+                                          ? "default"
+                                          : auction.status === "ENDED"
+                                          ? "default"
+                                          : "secondary"
+                                      }
+                                    >
+                                      {auction.status === "SCHEDULED"
+                                        ? "예정"
+                                        : auction.status === "RUNNING"
+                                        ? "진행 중"
+                                        : auction.status === "ENDED"
+                                        ? "종료"
+                                        : "취소됨"}
+                                    </Badge>
                                   </div>
                                 </div>
-                                <Badge
-                                  variant={
-                                    auction.status === "RUNNING"
-                                      ? "default"
-                                      : auction.status === "ENDED"
-                                      ? "default"
-                                      : "secondary"
-                                  }
-                                >
-                                  {auction.status === "SCHEDULED"
-                                    ? "예정"
-                                    : auction.status === "RUNNING"
-                                    ? "진행 중"
-                                    : auction.status === "ENDED"
-                                    ? "종료"
-                                    : "취소됨"}
-                                </Badge>
                               </div>
+                            </Link>
+                            <div className="flex flex-col gap-2">
+                              {canEditAuction(auction, user) && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    // TODO: 경매 수정 페이지로 이동
+                                    toast.info("경매 수정 기능은 준비 중입니다")
+                                  }}
+                                >
+                                  <Edit className="size-4" />
+                                </Button>
+                              )}
+                              {canCancelAuction(auction, user) && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={handleCancelAuction}
+                                >
+                                  <X className="size-4" />
+                                </Button>
+                              )}
                             </div>
                           </div>
-                        </Link>
-                      </CardContent>
-                    </Card>
-                  ))
+                        </CardContent>
+                      </Card>
+                    )
+                  })
                 )}
               </div>
             </TabsContent>

@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/src/components/ui/ta
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/src/components/ui/dialog"
 import { Input } from "@/src/components/ui/input"
 import { Label } from "@/src/components/ui/label"
-import { Calendar, Clock, Heart, Share2, TrendingUp, MapPin, CheckCircle2, Loader2, AlertCircle } from "lucide-react"
+import { Calendar, Clock, Heart, Share2, TrendingUp, MapPin, CheckCircle2, Loader2, AlertCircle, Edit, X } from "lucide-react"
 import Image from "next/image"
 import { useState, useEffect, use } from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
@@ -23,10 +23,11 @@ import { toast } from "sonner"
 import { useAuth } from "@/src/contexts/auth-context"
 import { ProtectedRoute } from "@/src/components/protected-route"
 import { isInWishlist, toggleWishlist } from "@/src/lib/wishlist"
+import { canEditProject, canCancelProject, canSupportProject, isProjectCreator } from "@/src/lib/permissions"
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, user } = useAuth()
   const [project, setProject] = useState<ProjectResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -129,10 +130,41 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
   }, [project])
 
+  // 프로젝트 취소 핸들러
+  const handleCancelProject = async () => {
+    if (!project) return
+    
+    if (!confirm("정말로 이 프로젝트를 취소하시겠습니까? 취소된 프로젝트는 복구할 수 없습니다.")) {
+      return
+    }
+
+    try {
+      await projectApi.updateProject(project.id, {
+        status: "CANCELED" as const,
+      })
+      toast.success("프로젝트가 취소되었습니다")
+      // 프로젝트 정보 새로고침
+      const updatedProject = await projectApi.getProject(project.id)
+      setProject(updatedProject)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "프로젝트 취소에 실패했습니다")
+    }
+  }
+
   // 후원하기 핸들러
   const handleSupport = async () => {
     if (!project || !supportAmount) {
       toast.error("후원 금액을 입력해주세요")
+      return
+    }
+
+    // 권한 체크
+    if (!canSupportProject(project, user)) {
+      if (isProjectCreator(project, user)) {
+        toast.error("자신의 프로젝트에는 후원할 수 없습니다")
+      } else {
+        toast.error("후원할 수 없는 프로젝트입니다")
+      }
       return
     }
 
@@ -390,6 +422,31 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   <Share2 className="mr-2 size-4" />
                   공유하기
                 </Button>
+                
+                {/* 판매자 전용 버튼 */}
+                {canEditProject(project, user) && (
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      // TODO: 프로젝트 수정 페이지로 이동
+                      toast.info("프로젝트 수정 기능은 준비 중입니다")
+                    }}
+                  >
+                    <Edit className="mr-2 size-4" />
+                    수정하기
+                  </Button>
+                )}
+                {canCancelProject(project, user) && (
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={handleCancelProject}
+                  >
+                    <X className="mr-2 size-4" />
+                    취소하기
+                  </Button>
+                )}
               </div>
             </div>
 
