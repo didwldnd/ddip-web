@@ -72,6 +72,12 @@ public class User extends BaseTimeEntity{
     @OneToMany(mappedBy = "user", orphanRemoval = true, cascade = CascadeType.ALL)
     private List<UserAddress> addresses = new ArrayList<>();
 
+    @OneToMany(mappedBy = "winner", orphanRemoval = true, cascade = CascadeType.ALL)
+    private List<Auction> wonAuctions = new ArrayList<>();
+
+    @OneToMany(mappedBy = "seller", orphanRemoval = true, cascade = CascadeType.ALL)
+    private List<Auction> sellerAuctions = new ArrayList<>();
+
     public static User from(UserRequestDto dto) {
         return User.builder()
                 .email(dto.getEmail())

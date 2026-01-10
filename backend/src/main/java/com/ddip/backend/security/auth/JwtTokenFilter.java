@@ -1,7 +1,7 @@
 package com.ddip.backend.security.auth;
 
-import com.ddip.backend.dto.error.security.ProfileIncompleteDeniedException;
-import com.ddip.backend.dto.error.security.TokenExpiredException;
+import com.ddip.backend.dto.exception.security.ProfileIncompleteDeniedException;
+import com.ddip.backend.dto.exception.security.TokenExpiredException;
 import com.ddip.backend.service.TokenBlackListService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
