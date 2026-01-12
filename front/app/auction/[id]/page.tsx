@@ -23,6 +23,7 @@ import { maskUserId, formatRelativeTime } from "@/src/lib/user-utils"
 import { formatIncrement } from "@/src/lib/format-amount"
 import { isInWishlist, toggleWishlist } from "@/src/lib/wishlist"
 import { canEditAuction, canCancelAuction, canBidAuction, isAuctionSeller } from "@/src/lib/permissions"
+import { showAuctionNotificationIfNeeded } from "@/src/lib/auction-notifications"
 // 웹소켓 관련 (백엔드 준비되면 주석 해제)
 // import { useAuctionSocket } from "@/src/hooks/useAuctionSocket"
 // import { RealtimeBidList } from "@/src/components/realtime-bid-list"
@@ -42,6 +43,15 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
   const [loadingBids, setLoadingBids] = useState(false)
   const [isFavorite, setIsFavorite] = useState(false)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
+  
+  // 알림 표시 여부 추적 (중복 알림 방지)
+  const notificationShownRef = useRef<{
+    started?: boolean
+    ended?: boolean
+  }>({})
+  
+  // 페이지 가시성 추적 (백그라운드에서는 알림 표시 안 함)
+  const [isPageVisible, setIsPageVisible] = useState(true)
   
   // 실시간 입찰 내역 (웹소켓 사용 시)
   // const [realtimeBids, setRealtimeBids] = useState<BidPlacedEvent[]>([])
@@ -77,7 +87,9 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
         
         let data = await auctionApi.getAuction(auctionId)
         setAuction(data)
-        setBidAmount(data.currentPrice + data.bidStep)
+        // bidStep이 없을 경우 기본값 사용 (1000원)
+        const bidStep = data.bidStep || 1000
+        setBidAmount(data.currentPrice + bidStep)
         
         // 입찰 내역도 함께 로드
         try {
@@ -97,6 +109,18 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
     loadAuction()
   }, [id])
 
+  // 페이지 가시성 추적 (백그라운드에서는 알림 표시 안 함)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      setIsPageVisible(!document.hidden)
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
+
   // 경매 상태 주기적 체크 (종료 시간에 따라 동적으로 조정)
   useEffect(() => {
     if (!auction) return
@@ -107,11 +131,12 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
       const auctionId = parseInt(id, 10)
       if (isNaN(auctionId)) return
 
-      const updatedAuction = await auctionApi.checkAndUpdateAuctionStatus(auctionId)
-      if (updatedAuction && updatedAuction.status !== auction.status) {
-        // 상태가 변경되었으면 경매 정보 새로고침
-        setAuction(updatedAuction)
-        setBidAmount(updatedAuction.currentPrice + updatedAuction.bidStep)
+        const updatedAuction = await auctionApi.checkAndUpdateAuctionStatus(auctionId)
+        if (updatedAuction && updatedAuction.status !== auction.status) {
+          // 상태가 변경되었으면 경매 정보 새로고침
+          setAuction(updatedAuction)
+          const bidStep = updatedAuction.bidStep || 1000
+          setBidAmount(updatedAuction.currentPrice + bidStep)
         
         // 입찰 내역도 새로고침
         try {
@@ -121,11 +146,21 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
           console.error("입찰 내역 로드 실패:", err)
         }
 
-        // 상태 변경 알림
-        if (updatedAuction.status === 'ENDED') {
-          toast.info("경매가 종료되었습니다")
-        } else if (updatedAuction.status === 'RUNNING') {
-          toast.info("경매가 시작되었습니다")
+        // 상태 변경 알림 (페이지가 보이고, 최초 한 번만 표시)
+        if (isPageVisible) {
+          showAuctionNotificationIfNeeded(
+            updatedAuction.id,
+            updatedAuction.title,
+            updatedAuction.status,
+            auction.status
+          )
+          
+          // 로컬 ref 업데이트 (중복 방지용)
+          if (updatedAuction.status === 'ENDED') {
+            notificationShownRef.current.ended = true
+          } else if (updatedAuction.status === 'RUNNING') {
+            notificationShownRef.current.started = true
+          }
         }
       }
 
@@ -180,7 +215,7 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
         clearTimeout(timeoutId)
       }
     }
-  }, [id, auction])
+  }, [id, auction, isPageVisible])
 
   // 찜하기 상태 동기화
   useEffect(() => {
@@ -260,7 +295,8 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
     if (!auction) return
     setBidAmount((prev) => {
       const newAmount = prev + increment
-      const minBid = auction.currentPrice + auction.bidStep
+      const bidStep = auction.bidStep || 1000
+      const minBid = auction.currentPrice + bidStep
       return Math.max(newAmount, minBid)
     })
   }
@@ -305,8 +341,9 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
       return
     }
 
-    if (bidAmount < auction.currentPrice + auction.bidStep) {
-      toast.error(`최소 입찰 금액은 ${(auction.currentPrice + auction.bidStep).toLocaleString()}원입니다`)
+    const bidStep = auction.bidStep || 1000
+    if (bidAmount < auction.currentPrice + bidStep) {
+      toast.error(`최소 입찰 금액은 ${(auction.currentPrice + bidStep).toLocaleString()}원입니다`)
       return
     }
 
@@ -339,7 +376,8 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
       const auctionToUse = finalAuction || updatedAuction
       
       setAuction(auctionToUse)
-      setBidAmount(auctionToUse.currentPrice + auctionToUse.bidStep)
+      const bidStep = auctionToUse.bidStep || 1000
+      setBidAmount(auctionToUse.currentPrice + bidStep)
       
       // 입찰 내역 새로고침
       const bids = await auctionApi.getBidsByAuction(auctionId)
@@ -609,9 +647,11 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                       </div>
                       <div className="flex items-center justify-between border-b pb-3">
                         <span className="font-medium">입찰 단위</span>
-                        <span className="text-muted-foreground">{auction.bidStep.toLocaleString()}원</span>
+                        <span className="text-muted-foreground">
+                          {(auction.bidStep || 1000).toLocaleString()}원
+                        </span>
                       </div>
-                      {auction.buyoutPrice && (
+                      {auction.buyoutPrice != null && auction.buyoutPrice > 0 && (
                         <div className="flex items-center justify-between border-b pb-3">
                           <span className="font-medium">즉시 구매가</span>
                           <span className="text-muted-foreground">{auction.buyoutPrice.toLocaleString()}원</span>
@@ -692,68 +732,70 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
 
                   <Separator />
 
-                  {isLive && canBidAuction(auction, user) && (
-                    <div className="space-y-3">
-                      <Label htmlFor="bid-amount">입찰 금액</Label>
-                      <div className="relative">
-                        <Input
-                          id="bid-amount"
-                          type="number"
-                          value={bidAmount}
-                          onChange={(e) => setBidAmount(Number(e.target.value))}
-                          min={auction.currentPrice + auction.bidStep}
-                          step={auction.bidStep}
-                          className="pr-12 text-lg font-semibold"
-                          disabled={isBidding}
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                          원
-                        </span>
-                      </div>
+                  {isLive && canBidAuction(auction, user) && (() => {
+                    const bidStep = auction.bidStep || 1000
+                    return (
+                      <div className="space-y-3">
+                        <Label htmlFor="bid-amount">입찰 금액</Label>
+                        <div className="relative">
+                          <Input
+                            id="bid-amount"
+                            type="number"
+                            value={bidAmount}
+                            onChange={(e) => setBidAmount(Number(e.target.value))}
+                            min={auction.currentPrice + bidStep}
+                            step={bidStep}
+                            className="pr-12 text-lg font-semibold"
+                            disabled={isBidding}
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                            원
+                          </span>
+                        </div>
 
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1 bg-transparent"
-                          onClick={() => handleQuickBid(auction.bidStep * 2)}
-                          disabled={isBidding}
-                        >
-                          {formatIncrement(auction.bidStep * 2)}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1 bg-transparent"
-                          onClick={() => handleQuickBid(auction.bidStep * 4)}
-                          disabled={isBidding}
-                        >
-                          {formatIncrement(auction.bidStep * 4)}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1 bg-transparent"
-                          onClick={() => handleQuickBid(auction.bidStep * 10)}
-                          disabled={isBidding}
-                        >
-                          {formatIncrement(auction.bidStep * 10)}
-                        </Button>
-                      </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 bg-transparent"
+                            onClick={() => handleQuickBid(bidStep * 2)}
+                            disabled={isBidding}
+                          >
+                            {formatIncrement(bidStep * 2)}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 bg-transparent"
+                            onClick={() => handleQuickBid(bidStep * 4)}
+                            disabled={isBidding}
+                          >
+                            {formatIncrement(bidStep * 4)}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 bg-transparent"
+                            onClick={() => handleQuickBid(bidStep * 10)}
+                            disabled={isBidding}
+                          >
+                            {formatIncrement(bidStep * 10)}
+                          </Button>
+                        </div>
 
-                      <Alert>
-                        <AlertCircle className="size-4" />
-                        <AlertDescription className="text-xs">
-                          최소 입찰 단위는 {auction.bidStep.toLocaleString()}원입니다
-                        </AlertDescription>
-                      </Alert>
+                        <Alert>
+                          <AlertCircle className="size-4" />
+                          <AlertDescription className="text-xs">
+                            최소 입찰 단위는 {bidStep.toLocaleString()}원입니다
+                          </AlertDescription>
+                        </Alert>
 
-                      <Button 
-                        size="lg" 
-                        className="w-full" 
-                        onClick={handleBid}
-                        disabled={isBidding || bidAmount < auction.currentPrice + auction.bidStep}
-                      >
+                        <Button 
+                          size="lg" 
+                          className="w-full" 
+                          onClick={handleBid}
+                          disabled={isBidding || bidAmount < auction.currentPrice + bidStep}
+                        >
                         {isBidding ? (
                           <>
                             <Loader2 className="mr-2 size-4 animate-spin" />
@@ -766,8 +808,9 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                           </>
                         )}
                       </Button>
-                    </div>
-                  )}
+                      </div>
+                    )
+                  })()}
 
                   {!isLive && (
                     <Alert>
@@ -804,9 +847,9 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">입찰 단위</span>
-                    <span className="font-semibold">{auction.bidStep.toLocaleString()}원</span>
+                    <span className="font-semibold">{(auction.bidStep || 1000).toLocaleString()}원</span>
                   </div>
-                  {auction.buyoutPrice && (
+                  {auction.buyoutPrice != null && auction.buyoutPrice > 0 && (
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">즉시 구매가</span>
                       <span className="font-semibold">{auction.buyoutPrice.toLocaleString()}원</span>

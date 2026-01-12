@@ -4,12 +4,13 @@ import { Navigation } from "@/src/components/navigation"
 import { HeroBanner } from "@/src/components/hero-banner"
 import { ProjectCard } from "@/src/components/project-card"
 import { AuctionCard } from "@/src/components/auction-card"
+import { EmptyState } from "@/src/components/empty-state"
 import { Button } from "@/src/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/src/components/ui/tabs"
 import { useState, useEffect } from "react"
 import { projectApi, auctionApi } from "@/src/services/api"
 import { ProjectResponse, AuctionResponse } from "@/src/types/api"
-import { Loader2 } from "lucide-react"
+import { Loader2, Package, Gavel } from "lucide-react"
 
 export default function HomePage() {
   const [projects, setProjects] = useState<ProjectResponse[]>([])
@@ -161,6 +162,16 @@ export default function HomePage() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="size-8 animate-spin text-primary" />
               </div>
+            ) : projectCards.length === 0 ? (
+              <EmptyState
+                icon={Package}
+                title="등록된 프로젝트가 없습니다"
+                description="첫 번째 크라우드펀딩 프로젝트를 시작해보세요"
+                action={{
+                  label: "프로젝트 등록하기",
+                  href: "/project/create",
+                }}
+              />
             ) : (
               <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {projectCards.map((project) => (
@@ -180,6 +191,16 @@ export default function HomePage() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="size-8 animate-spin text-primary" />
               </div>
+            ) : auctionCards.length === 0 ? (
+              <EmptyState
+                icon={Gavel}
+                title="등록된 경매가 없습니다"
+                description="첫 번째 경매를 등록해보세요"
+                action={{
+                  label: "경매 등록하기",
+                  href: "/auction/create",
+                }}
+              />
             ) : (
               <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {auctionCards.map((auction) => (

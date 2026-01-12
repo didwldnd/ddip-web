@@ -485,11 +485,12 @@ const createMockAuction = (
     description: `경매 상품 ${id}에 대한 상세 설명입니다.`,
     startPrice: 50000,
     currentPrice: 50000 + id * 10000,
-    bidStep: 5000,
     buyoutPrice: id % 2 === 0 ? 200000 : null,
     status,
     winner,
     ...overrides,
+    // bidStep은 overrides에 있으면 그 값을 사용, 없으면 기본값 5000 사용
+    bidStep: overrides?.bidStep ?? 5000,
     // 날짜는 위에서 검증된 값으로 덮어쓰기 (overrides의 날짜가 유효하지 않을 수 있으므로)
     startAt,
     endAt,
@@ -918,7 +919,42 @@ export const auctionApi = {
     
     // limit 적용
     const limit = params?.limit || 10;
-    return filteredAuctions.slice(0, limit);
+    const limitedAuctions = filteredAuctions.slice(0, limit);
+    
+    // 각 경매의 이미지를 메모리에서 복원
+    const auctionsWithImages = limitedAuctions.map(auction => {
+      const imageUrls: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        const imageKey = `auction-${auction.id}-${i}`;
+        const image = imageStore.get(imageKey);
+        if (image) {
+          imageUrls.push(image);
+        }
+      }
+      
+      // 이미지가 있으면 복원, 없으면 기존 값 유지 (또는 기본 이미지)
+      if (imageUrls.length > 0) {
+        return {
+          ...auction,
+          imageUrl: imageUrls[0],
+          imageUrls: imageUrls,
+        };
+      }
+      
+      // 이미지가 없고 기존 imageUrl도 없으면 기본 이미지 사용
+      if (!auction.imageUrl) {
+        const defaultImageUrl = `https://picsum.photos/800/600?random=${auction.id + 1000}`;
+        return {
+          ...auction,
+          imageUrl: defaultImageUrl,
+          imageUrls: [defaultImageUrl],
+        };
+      }
+      
+      return auction;
+    });
+    
+    return auctionsWithImages;
   },
 
   /**
@@ -940,13 +976,24 @@ export const auctionApi = {
         }
       }
       
+      // 이미지가 있으면 복원, 없으면 기존 값 유지 또는 기본 이미지 사용
+      let imageUrl = imageUrls[0] || storedAuction.imageUrl;
+      let finalImageUrls = imageUrls.length > 0 ? imageUrls : storedAuction.imageUrls;
+      
+      // 이미지가 전혀 없으면 기본 이미지 사용
+      if (!imageUrl && (!finalImageUrls || finalImageUrls.length === 0)) {
+        const defaultImageUrl = `https://picsum.photos/800/600?random=${id + 1000}`;
+        imageUrl = defaultImageUrl;
+        finalImageUrls = [defaultImageUrl];
+      }
+      
       const auctionWithImages = {
         ...storedAuction,
-        imageUrl: imageUrls[0] || storedAuction.imageUrl,
-        imageUrls: imageUrls.length > 0 ? imageUrls : storedAuction.imageUrls,
+        imageUrl,
+        imageUrls: finalImageUrls,
       };
       
-      console.log("저장된 경매 반환:", { id, title: auctionWithImages.title });
+      console.log("저장된 경매 반환:", { id, title: auctionWithImages.title, hasImage: !!imageUrl });
       return auctionWithImages;
     }
     
@@ -1451,9 +1498,9 @@ export const authApi = {
   oauthLogin: async (provider: OAuthProvider): Promise<string> => {
     // 백엔드 API 엔드포인트
     // 백엔드에서 OAuth 로그인 엔드포인트를 제공한다고 가정
-    // 예: GET /api/auth/oauth2/{provider} -> OAuth 제공자 페이지로 리다이렉트
+    // 예: GET /oauth2/{provider} -> OAuth 제공자 페이지로 리다이렉트
     const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
-    const redirectUrl = `${API_BASE_URL}/api/auth/oauth2/${provider}`;
+    const redirectUrl = `${API_BASE_URL}/oauth2/authorization/${provider}`;
     
     // 실제 백엔드 연동 시:
     // 1. 백엔드가 OAuth 제공자 로그인 페이지로 리다이렉트
@@ -1480,9 +1527,9 @@ export const authApi = {
     
     try {
       // 백엔드 OAuth 콜백 엔드포인트 호출
-      // POST /api/auth/oauth2/callback/{provider}
+      // POST /oauth2/callback/{provider}
       // Body: { code: string, state?: string }
-      const response = await fetch(`${API_BASE_URL}/api/auth/oauth2/callback/${provider}`, {
+      const response = await fetch(`${API_BASE_URL}/oauth2/callback/${provider}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

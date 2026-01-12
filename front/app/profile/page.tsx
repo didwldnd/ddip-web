@@ -1,6 +1,7 @@
 "use client"
 
 import { Navigation } from "@/src/components/navigation"
+import { EmptyState } from "@/src/components/empty-state"
 import { Button } from "@/src/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card"
 import { Badge } from "@/src/components/ui/badge"
@@ -160,17 +161,14 @@ function ProfileTabs({ defaultTab }: { defaultTab: string }) {
             <TabsContent value="projects" className="mt-6">
               <div className="space-y-4">
                 {myProjects.length === 0 ? (
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="text-center py-8">
-                        <Package className="mx-auto size-12 text-muted-foreground mb-4" />
-                        <p className="text-muted-foreground mb-4">등록한 프로젝트가 없습니다</p>
-                        <Button asChild>
-                          <Link href="/project/create">프로젝트 등록하기</Link>
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <EmptyState
+                    icon={Package}
+                    title="등록한 프로젝트가 없습니다"
+                    action={{
+                      label: "프로젝트 등록하기",
+                      href: "/project/create",
+                    }}
+                  />
                 ) : (
                   myProjects.map((project) => {
                     const handleCancelProject = async () => {
@@ -283,17 +281,14 @@ function ProfileTabs({ defaultTab }: { defaultTab: string }) {
             <TabsContent value="auctions" className="mt-6">
               <div className="space-y-4">
                 {myAuctions.length === 0 ? (
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="text-center py-8">
-                        <Gavel className="mx-auto size-12 text-muted-foreground mb-4" />
-                        <p className="text-muted-foreground mb-4">등록한 경매가 없습니다</p>
-                        <Button asChild>
-                          <Link href="/auction/create">경매 등록하기</Link>
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <EmptyState
+                    icon={Gavel}
+                    title="등록한 경매가 없습니다"
+                    action={{
+                      label: "경매 등록하기",
+                      href: "/auction/create",
+                    }}
+                  />
                 ) : (
                   myAuctions.map((auction) => {
                     const handleCancelAuction = async () => {
@@ -401,14 +396,10 @@ function ProfileTabs({ defaultTab }: { defaultTab: string }) {
             <TabsContent value="supports" className="mt-6">
               <div className="space-y-4">
                 {mySupports.length === 0 ? (
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="text-center py-8">
-                        <Heart className="mx-auto size-12 text-muted-foreground mb-4" />
-                        <p className="text-muted-foreground">후원 내역이 없습니다</p>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <EmptyState
+                    icon={Heart}
+                    title="후원 내역이 없습니다"
+                  />
                 ) : (
                   mySupports.map((support) => (
                     <Card key={support.id}>
@@ -458,14 +449,10 @@ function ProfileTabs({ defaultTab }: { defaultTab: string }) {
                     찜한 프로젝트 ({favoriteProjects.length})
                   </h3>
                   {favoriteProjects.length === 0 ? (
-                    <Card>
-                      <CardContent className="pt-6">
-                        <div className="text-center py-8">
-                          <Heart className="mx-auto size-12 text-muted-foreground mb-4" />
-                          <p className="text-muted-foreground">찜한 프로젝트가 없습니다</p>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <EmptyState
+                      icon={Heart}
+                      title="찜한 프로젝트가 없습니다"
+                    />
                   ) : (
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                       {favoriteProjects.map((project) => {
@@ -515,14 +502,10 @@ function ProfileTabs({ defaultTab }: { defaultTab: string }) {
                     찜한 경매 ({favoriteAuctions.length})
                   </h3>
                   {favoriteAuctions.length === 0 ? (
-                    <Card>
-                      <CardContent className="pt-6">
-                        <div className="text-center py-8">
-                          <Heart className="mx-auto size-12 text-muted-foreground mb-4" />
-                          <p className="text-muted-foreground">찜한 경매가 없습니다</p>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <EmptyState
+                      icon={Heart}
+                      title="찜한 경매가 없습니다"
+                    />
                   ) : (
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                       {favoriteAuctions.map((auction) => {
@@ -584,14 +567,10 @@ function ProfileTabs({ defaultTab }: { defaultTab: string }) {
             <TabsContent value="bids" className="mt-6">
               <div className="space-y-4">
                 {myBids.length === 0 ? (
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="text-center py-8">
-                        <Gavel className="mx-auto size-12 text-muted-foreground mb-4" />
-                        <p className="text-muted-foreground">입찰 내역이 없습니다</p>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <EmptyState
+                    icon={Gavel}
+                    title="입찰 내역이 없습니다"
+                  />
                 ) : (
                   myBids.map((bid) => (
                     <Card key={bid.id}>

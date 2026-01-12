@@ -3,10 +3,10 @@
 import { Navigation } from "@/src/components/navigation"
 import { ProjectCard } from "@/src/components/project-card"
 import { AuctionCard } from "@/src/components/auction-card"
+import { EmptyState } from "@/src/components/empty-state"
 import { Button } from "@/src/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/src/components/ui/tabs"
 import { Input } from "@/src/components/ui/input"
-import { Card, CardContent } from "@/src/components/ui/card"
 import { useState, useEffect, Suspense, use } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { projectApi, auctionApi } from "@/src/services/api"
@@ -185,17 +185,11 @@ function SearchContent() {
                   {/* 전체 결과 */}
                   <TabsContent value="all" className="mt-6">
                     {totalResults === 0 ? (
-                      <Card>
-                        <CardContent className="pt-6">
-                          <div className="text-center py-12">
-                            <Search className="mx-auto size-12 text-muted-foreground mb-4" />
-                            <p className="text-lg font-semibold mb-2">검색 결과가 없습니다</p>
-                            <p className="text-muted-foreground">
-                              다른 키워드로 검색해보세요
-                            </p>
-                          </div>
-                        </CardContent>
-                      </Card>
+                      <EmptyState
+                        icon={Search}
+                        title="검색 결과가 없습니다"
+                        description="다른 키워드로 검색해보세요"
+                      />
                     ) : (
                       <div className="space-y-8">
                         {/* 프로젝트 섹션 */}
@@ -234,17 +228,11 @@ function SearchContent() {
                   {/* 프로젝트만 */}
                   <TabsContent value="projects" className="mt-6">
                     {projects.length === 0 ? (
-                      <Card>
-                        <CardContent className="pt-6">
-                          <div className="text-center py-12">
-                            <Package className="mx-auto size-12 text-muted-foreground mb-4" />
-                            <p className="text-lg font-semibold mb-2">프로젝트 검색 결과가 없습니다</p>
-                            <p className="text-muted-foreground">
-                              다른 키워드로 검색해보세요
-                            </p>
-                          </div>
-                        </CardContent>
-                      </Card>
+                      <EmptyState
+                        icon={Package}
+                        title="프로젝트 검색 결과가 없습니다"
+                        description="다른 키워드로 검색해보세요"
+                      />
                     ) : (
                       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                         {projectCards.map((project) => (
@@ -257,17 +245,11 @@ function SearchContent() {
                   {/* 경매만 */}
                   <TabsContent value="auctions" className="mt-6">
                     {auctions.length === 0 ? (
-                      <Card>
-                        <CardContent className="pt-6">
-                          <div className="text-center py-12">
-                            <Gavel className="mx-auto size-12 text-muted-foreground mb-4" />
-                            <p className="text-lg font-semibold mb-2">경매 검색 결과가 없습니다</p>
-                            <p className="text-muted-foreground">
-                              다른 키워드로 검색해보세요
-                            </p>
-                          </div>
-                        </CardContent>
-                      </Card>
+                      <EmptyState
+                        icon={Gavel}
+                        title="경매 검색 결과가 없습니다"
+                        description="다른 키워드로 검색해보세요"
+                      />
                     ) : (
                       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                         {auctionCards.map((auction) => (
@@ -281,17 +263,11 @@ function SearchContent() {
             )}
           </>
         ) : (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-center py-12">
-                <Search className="mx-auto size-12 text-muted-foreground mb-4" />
-                <p className="text-lg font-semibold mb-2">검색어를 입력해주세요</p>
-                <p className="text-muted-foreground">
-                  프로젝트나 경매의 제목, 설명, 태그를 검색할 수 있습니다
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <EmptyState
+            icon={Search}
+            title="검색어를 입력해주세요"
+            description="프로젝트나 경매의 제목, 설명, 태그를 검색할 수 있습니다"
+          />
         )}
       </main>
     </div>
