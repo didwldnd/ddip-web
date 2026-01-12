@@ -5,22 +5,19 @@ import { HeroBanner } from "@/src/components/hero-banner"
 import { ProjectCard } from "@/src/components/project-card"
 import { AuctionCard } from "@/src/components/auction-card"
 import { EmptyState } from "@/src/components/empty-state"
-import { FilterBar } from "@/src/components/filter-bar"
 import { Button } from "@/src/components/ui/button"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/src/components/ui/tabs"
+import Link from "next/link"
 import { useState, useEffect, useMemo } from "react"
 import { projectApi, auctionApi } from "@/src/services/api"
 import { ProjectResponse, AuctionResponse } from "@/src/types/api"
-import { useFilterStore, filterAndSortProjects, filterAndSortAuctions } from "@/src/stores/filterStore"
-import { Loader2, Package, Gavel } from "lucide-react"
+import { Loader2, Package, Gavel, Clock, ArrowRight, Sparkles } from "lucide-react"
 
 export default function HomePage() {
-  const [projects, setProjects] = useState<ProjectResponse[]>([])
-  const [auctions, setAuctions] = useState<AuctionResponse[]>([])
+  const [popularProjects, setPopularProjects] = useState<ProjectResponse[]>([])
+  const [popularAuctions, setPopularAuctions] = useState<AuctionResponse[]>([])
+  const [urgentProjects, setUrgentProjects] = useState<ProjectResponse[]>([])
+  const [urgentAuctions, setUrgentAuctions] = useState<AuctionResponse[]>([])
   const [loading, setLoading] = useState(true)
-  
-  // Zustand 필터 상태
-  const { projectStatus, projectSort, auctionStatus, auctionSort } = useFilterStore()
 
   useEffect(() => {
     const loadData = async () => {
@@ -33,14 +30,50 @@ export default function HomePage() {
           auctionApi.checkAllAuctionsStatus(),
         ])
         
-        // 프로젝트와 경매 데이터를 동시에 로드
-        // 등록된 모든 프로젝트/경매 가져오기 (상태 필터 없이)
-        const [projectsData, auctionsData] = await Promise.all([
-          projectApi.getProjects({ limit: 20 }), // 최대 20개
-          auctionApi.getAuctions({ limit: 20 }), // 최대 20개
+        // 인기 프로젝트/경매 로드 (인기순 정렬, 각 8개)
+        const [allProjects, allAuctions] = await Promise.all([
+          projectApi.getProjects({ limit: 50 }),
+          auctionApi.getAuctions({ limit: 50 }),
         ])
-        setProjects(projectsData)
-        setAuctions(auctionsData)
+        
+        // 인기 프로젝트: 후원자 수 기준 정렬
+        const sortedByPopularity = [...allProjects].sort((a, b) => {
+          const backersA = a.rewardTiers.reduce((sum, tier) => sum + tier.soldQuantity, 0)
+          const backersB = b.rewardTiers.reduce((sum, tier) => sum + tier.soldQuantity, 0)
+          return backersB - backersA
+        })
+        setPopularProjects(sortedByPopularity.slice(0, 8))
+        
+        // 인기 경매: 입찰 수 기준 (현재는 ID 순으로 대체)
+        const sortedAuctions = [...allAuctions].sort((a, b) => b.id - a.id)
+        setPopularAuctions(sortedAuctions.slice(0, 8))
+        
+        // 마감 임박 프로젝트: 24시간 이내 마감
+        const now = new Date().getTime()
+        const urgentProj = allProjects.filter(project => {
+          const endTime = new Date(project.endAt).getTime()
+          const hoursLeft = (endTime - now) / (1000 * 60 * 60)
+          return hoursLeft <= 24 && hoursLeft > 0 && project.status === 'OPEN'
+        })
+        urgentProj.sort((a, b) => {
+          const endTimeA = new Date(a.endAt).getTime()
+          const endTimeB = new Date(b.endAt).getTime()
+          return endTimeA - endTimeB // 마감 임박순
+        })
+        setUrgentProjects(urgentProj.slice(0, 8))
+        
+        // 마감 임박 경매: 24시간 이내 마감
+        const urgentAuc = allAuctions.filter(auction => {
+          const endTime = new Date(auction.endAt).getTime()
+          const hoursLeft = (endTime - now) / (1000 * 60 * 60)
+          return hoursLeft <= 24 && hoursLeft > 0 && (auction.status === 'RUNNING' || auction.status === 'SCHEDULED')
+        })
+        urgentAuc.sort((a, b) => {
+          const endTimeA = new Date(a.endAt).getTime()
+          const endTimeB = new Date(b.endAt).getTime()
+          return endTimeA - endTimeB
+        })
+        setUrgentAuctions(urgentAuc.slice(0, 8))
       } catch (error) {
         console.error("데이터 로드 실패:", error)
       } finally {
@@ -55,42 +88,64 @@ export default function HomePage() {
   useEffect(() => {
     const checkStatus = async () => {
       try {
-        // 모든 프로젝트와 경매의 상태 일괄 체크
         await Promise.all([
           projectApi.checkAllProjectsStatus(),
           auctionApi.checkAllAuctionsStatus(),
         ])
         
         // 데이터 새로고침
-        const [projectsData, auctionsData] = await Promise.all([
-          projectApi.getProjects({ limit: 20 }),
-          auctionApi.getAuctions({ limit: 20 }),
+        const [allProjects, allAuctions] = await Promise.all([
+          projectApi.getProjects({ limit: 50 }),
+          auctionApi.getAuctions({ limit: 50 }),
         ])
-        setProjects(projectsData)
-        setAuctions(auctionsData)
+        
+        // 인기 프로젝트 정렬
+        const sortedByPopularity = [...allProjects].sort((a, b) => {
+          const backersA = a.rewardTiers.reduce((sum, tier) => sum + tier.soldQuantity, 0)
+          const backersB = b.rewardTiers.reduce((sum, tier) => sum + tier.soldQuantity, 0)
+          return backersB - backersA
+        })
+        setPopularProjects(sortedByPopularity.slice(0, 8))
+        
+        const sortedAuctions = [...allAuctions].sort((a, b) => b.id - a.id)
+        setPopularAuctions(sortedAuctions.slice(0, 8))
+        
+        // 마감 임박 항목 업데이트
+        const now = new Date().getTime()
+        const urgentProj = allProjects.filter(project => {
+          const endTime = new Date(project.endAt).getTime()
+          const hoursLeft = (endTime - now) / (1000 * 60 * 60)
+          return hoursLeft <= 24 && hoursLeft > 0 && project.status === 'OPEN'
+        })
+        urgentProj.sort((a, b) => {
+          const endTimeA = new Date(a.endAt).getTime()
+          const endTimeB = new Date(b.endAt).getTime()
+          return endTimeA - endTimeB
+        })
+        setUrgentProjects(urgentProj.slice(0, 8))
+        
+        const urgentAuc = allAuctions.filter(auction => {
+          const endTime = new Date(auction.endAt).getTime()
+          const hoursLeft = (endTime - now) / (1000 * 60 * 60)
+          return hoursLeft <= 24 && hoursLeft > 0 && (auction.status === 'RUNNING' || auction.status === 'SCHEDULED')
+        })
+        urgentAuc.sort((a, b) => {
+          const endTimeA = new Date(a.endAt).getTime()
+          const endTimeB = new Date(b.endAt).getTime()
+          return endTimeA - endTimeB
+        })
+        setUrgentAuctions(urgentAuc.slice(0, 8))
       } catch (error) {
         console.error("상태 체크 실패:", error)
       }
     }
 
-    // 1분마다 체크
     const interval = setInterval(checkStatus, 60000)
-
     return () => clearInterval(interval)
   }, [])
 
-  // 필터링 및 정렬된 프로젝트
-  const filteredProjects = useMemo(() => {
-    return filterAndSortProjects(projects, projectStatus, projectSort)
-  }, [projects, projectStatus, projectSort])
-  
-  // 필터링 및 정렬된 경매
-  const filteredAuctions = useMemo(() => {
-    return filterAndSortAuctions(auctions, auctionStatus, auctionSort)
-  }, [auctions, auctionStatus, auctionSort])
-
   // 프로젝트 데이터를 ProjectCard props로 변환
-  const projectCards = filteredProjects.map((project) => {
+  const popularProjectCards = popularProjects.map((project) => {
     const endTime = new Date(project.endAt)
     const now = new Date()
     // 날짜 유효성 검사
@@ -112,8 +167,30 @@ export default function HomePage() {
     }
   })
 
-  // 경매 데이터를 AuctionCard props로 변환
-  const auctionCards = filteredAuctions.map((auction) => {
+  // 마감 임박 프로젝트 카드
+  const urgentProjectCards = urgentProjects.map((project) => {
+    const endTime = new Date(project.endAt)
+    const now = new Date()
+    const daysLeft = isNaN(endTime.getTime()) 
+      ? 0 
+      : Math.ceil((endTime.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    const backers = project.rewardTiers.reduce((sum, tier) => sum + tier.soldQuantity, 0)
+
+    return {
+      id: String(project.id),
+      title: project.title,
+      description: project.description,
+      image: project.imageUrl || "/placeholder.svg",
+      category: "프로젝트",
+      currentAmount: project.currentAmount,
+      goalAmount: project.targetAmount,
+      backers,
+      daysLeft: daysLeft > 0 ? daysLeft : 0,
+    }
+  })
+
+  // 인기 경매 카드
+  const popularAuctionCards = popularAuctions.map((auction) => {
     const endTime = new Date(auction.endAt)
     const now = new Date()
     // 날짜 유효성 검사
@@ -153,112 +230,162 @@ export default function HomePage() {
       <HeroBanner />
 
       <main className="container mx-auto px-4 py-12">
-        <Tabs defaultValue="projects" className="w-full">
-          <div className="mb-8 flex items-center justify-between">
-            <TabsList>
-              <TabsTrigger value="projects" className="text-base">
-                크라우드펀딩
-              </TabsTrigger>
-              <TabsTrigger value="auctions" className="text-base">
-                진행 중인 경매
-              </TabsTrigger>
-            </TabsList>
+        {/* 마감 임박 긴급성 섹션 */}
+        {(urgentProjects.length > 0 || urgentAuctions.length > 0) && (
+          <section className="mb-12">
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <Clock className="size-6 text-destructive" />
+                  <h2 className="text-2xl font-bold">지금 아니면 놓쳐요!</h2>
+                </div>
+                <p className="text-muted-foreground">24시간 이내 마감되는 프로젝트와 경매</p>
+              </div>
+            </div>
+            
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="size-8 animate-spin text-primary" />
+              </div>
+            ) : (
+              <div className="space-y-8">
+                {urgentProjects.length > 0 && (
+                  <div>
+                    <div className="mb-4 flex items-center justify-between">
+                      <h3 className="text-lg font-semibold flex items-center gap-2">
+                        <Package className="size-5" />
+                        마감 임박 프로젝트
+                      </h3>
+                    </div>
+                    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+                      {urgentProjectCards.map((project) => (
+                        <ProjectCard key={project.id} {...project} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {urgentAuctions.length > 0 && (
+                  <div>
+                    <div className="mb-4 flex items-center justify-between">
+                      <h3 className="text-lg font-semibold flex items-center gap-2">
+                        <Gavel className="size-5" />
+                        마감 임박 경매
+                      </h3>
+                    </div>
+                    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+                      {urgentAuctions.map((auction) => {
+                        const endTime = new Date(auction.endAt)
+                        const now = new Date()
+                        const distance = isNaN(endTime.getTime()) ? 0 : endTime.getTime() - now.getTime()
+                        let timeLeft = "종료됨"
+                        if (distance > 0) {
+                          const hours = Math.floor(distance / (1000 * 60 * 60))
+                          const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60))
+                          if (hours > 0) {
+                            timeLeft = `${hours}시간 ${minutes}분`
+                          } else {
+                            timeLeft = `${minutes}분`
+                          }
+                        }
+                        return (
+                          <AuctionCard
+                            key={auction.id}
+                            id={String(auction.id)}
+                            title={auction.title}
+                            description={auction.description}
+                            image={auction.imageUrl || "/placeholder.svg"}
+                            category="경매"
+                            currentBid={auction.currentPrice}
+                            bidCount={0}
+                            timeLeft={timeLeft}
+                            isLive={auction.status === "RUNNING"}
+                          />
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        )}
 
-            <Button variant="outline">전체보기</Button>
-          </div>
-
-          <TabsContent value="projects" className="mt-0">
-            <div className="mb-6">
+        {/* 인기 프로젝트 섹션 */}
+        <section className="mb-12">
+          <div className="mb-6 flex items-center justify-between">
+            <div>
               <h2 className="text-2xl font-bold">인기 프로젝트</h2>
               <p className="text-muted-foreground">지금 가장 핫한 크라우드펀딩 프로젝트를 만나보세요</p>
             </div>
-            
-            <FilterBar type="project" />
+            <Button variant="outline" asChild>
+              <Link href="/projects">
+                전체보기
+                <ArrowRight className="ml-2 size-4" />
+              </Link>
+            </Button>
+          </div>
+          
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="size-8 animate-spin text-primary" />
+            </div>
+          ) : popularProjectCards.length === 0 ? (
+            <EmptyState
+              icon={Package}
+              title="등록된 프로젝트가 없습니다"
+              description="첫 번째 크라우드펀딩 프로젝트를 시작해보세요"
+              action={{
+                label: "프로젝트 등록하기",
+                href: "/project/create",
+              }}
+            />
+          ) : (
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+              {popularProjectCards.map((project) => (
+                <ProjectCard key={project.id} {...project} />
+              ))}
+            </div>
+          )}
+        </section>
 
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="size-8 animate-spin text-primary" />
-              </div>
-            ) : projectCards.length === 0 ? (
-              // 필터가 활성화되어 있는지 확인
-              projectStatus !== 'ALL' || projectSort !== 'latest' ? (
-                <EmptyState
-                  icon={Package}
-                  title="필터 조건에 맞는 프로젝트가 없습니다"
-                  description="다른 필터 조건을 선택하거나 필터를 초기화해보세요"
-                  action={{
-                    label: "필터 초기화",
-                    onClick: () => {
-                      useFilterStore.getState().resetFilters()
-                    },
-                  }}
-                />
-              ) : (
-                <EmptyState
-                  icon={Package}
-                  title="등록된 프로젝트가 없습니다"
-                  description="첫 번째 크라우드펀딩 프로젝트를 시작해보세요"
-                  action={{
-                    label: "프로젝트 등록하기",
-                    href: "/project/create",
-                  }}
-                />
-              )
-            ) : (
-              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {projectCards.map((project) => (
-                  <ProjectCard key={project.id} {...project} />
-                ))}
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="auctions" className="mt-0">
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold">라이브 경매</h2>
+        {/* 인기 경매 섹션 */}
+        <section className="mb-12">
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold">인기 경매</h2>
               <p className="text-muted-foreground">지금 실시간으로 진행 중인 경매에 참여하세요</p>
             </div>
-            
-            <FilterBar type="auction" />
-
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="size-8 animate-spin text-primary" />
-              </div>
-            ) : auctionCards.length === 0 ? (
-              // 필터가 활성화되어 있는지 확인
-              auctionStatus !== 'ALL' || auctionSort !== 'latest' ? (
-                <EmptyState
-                  icon={Gavel}
-                  title="필터 조건에 맞는 경매가 없습니다"
-                  description="다른 필터 조건을 선택하거나 필터를 초기화해보세요"
-                  action={{
-                    label: "필터 초기화",
-                    onClick: () => {
-                      useFilterStore.getState().resetFilters()
-                    },
-                  }}
-                />
-              ) : (
-                <EmptyState
-                  icon={Gavel}
-                  title="등록된 경매가 없습니다"
-                  description="첫 번째 경매를 등록해보세요"
-                  action={{
-                    label: "경매 등록하기",
-                    href: "/auction/create",
-                  }}
-                />
-              )
-            ) : (
-              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {auctionCards.map((auction) => (
-                  <AuctionCard key={auction.id} {...auction} />
-                ))}
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
+            <Button variant="outline" asChild>
+              <Link href="/auctions">
+                전체보기
+                <ArrowRight className="ml-2 size-4" />
+              </Link>
+            </Button>
+          </div>
+          
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="size-8 animate-spin text-primary" />
+            </div>
+          ) : popularAuctionCards.length === 0 ? (
+            <EmptyState
+              icon={Gavel}
+              title="등록된 경매가 없습니다"
+              description="첫 번째 경매를 등록해보세요"
+              action={{
+                label: "경매 등록하기",
+                href: "/auction/create",
+              }}
+            />
+          ) : (
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+              {popularAuctionCards.map((auction) => (
+                <AuctionCard key={auction.id} {...auction} />
+              ))}
+            </div>
+          )}
+        </section>
       </main>
 
       <footer className="border-t bg-muted/30 py-12">

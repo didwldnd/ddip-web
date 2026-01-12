@@ -260,6 +260,126 @@ function getCurrentUser(): UserResponse {
   return createMockUser(1);
 }
 
+// 대량 Mock 프로젝트 생성 함수
+function generateMockProjects(count: number = 50): void {
+  const projectTitles = [
+    '스마트 워치 프로젝트', 'AI 스피커 개발', '무선 이어폰 크라우드펀딩',
+    '스마트 홈 시스템', '전기 자전거 프로젝트', '3D 프린터 개발',
+    'VR 헤드셋 제작', '스마트 미러 프로젝트', '로봇 청소기 개발',
+    '태블릿 스탠드 프로젝트', '무선 충전기 개발', '스마트 도어락',
+    '홈 보안 시스템', '스마트 조명 프로젝트', '음성 인식 기기',
+    '스마트 화분 프로젝트', '자동 물주기 시스템', '스마트 체중계',
+    '건강 모니터링 기기', '스마트 알람시계', '무선 마우스 프로젝트',
+    '기계식 키보드', '게이밍 의자 프로젝트', '스마트 백팩',
+    '무선 충전 파워뱅크', '스마트 안경 프로젝트', '웨어러블 피트니스 트래커',
+    '스마트 반지', '블루투스 이어버드', '노이즈 캔슬링 헤드폰',
+    '스마트 자전거 자물쇠', '전자책 리더기', '스마트 수면 모니터',
+    '홈 자동화 허브', '스마트 온도계', '무선 이어폰 케이스',
+    '스마트 지갑', '블루투스 스피커', '스마트 카메라',
+    '홈 보안 카메라', '스마트 도어벨', '무선 충전 패드',
+    '스마트 수건걸이', '자동 화분 프로젝트', '스마트 수족관',
+    '홈 피트니스 장비', '스마트 요가 매트', '무선 게이밍 컨트롤러',
+    '스마트 알람 프로젝트', '홈 오디오 시스템', '스마트 거울',
+  ];
+
+  const descriptions = [
+    '혁신적인 기술로 만든 최신 제품입니다.',
+    '일상생활을 더 편리하게 만들어주는 아이템입니다.',
+    '환경을 생각한 친환경 제품입니다.',
+    '최고의 품질과 성능을 자랑합니다.',
+    '합리적인 가격으로 프리미엄 경험을 제공합니다.',
+    '사용자 중심의 디자인으로 제작되었습니다.',
+    '최신 기술이 적용된 차세대 제품입니다.',
+    '실용성과 스타일을 모두 갖춘 제품입니다.',
+  ];
+
+  const statuses: ProjectResponse['status'][] = ['OPEN', 'SUCCESS', 'FAILED', 'DRAFT'];
+  
+  const now = Date.now();
+  let baseId = now;
+
+  for (let i = 0; i < count; i++) {
+    const id = baseId + i;
+    const titleIndex = i % projectTitles.length;
+    const descIndex = i % descriptions.length;
+    const statusIndex = i % statuses.length;
+    
+    // 다양한 날짜 범위 생성
+    const daysAgo = Math.floor(Math.random() * 60); // 0-60일 전
+    const duration = 15 + Math.floor(Math.random() * 45); // 15-60일
+    const startDate = new Date(now - daysAgo * 24 * 60 * 60 * 1000);
+    const endDate = new Date(startDate.getTime() + duration * 24 * 60 * 60 * 1000);
+    const createdAt = new Date(startDate.getTime() - 5 * 24 * 60 * 60 * 1000);
+
+    // 목표 금액과 현재 금액 생성
+    const targetAmount = (5 + Math.floor(Math.random() * 20)) * 1000000; // 500만~2500만
+    const progress = Math.random();
+    let currentAmount = 0;
+    let status: ProjectResponse['status'] = statuses[statusIndex];
+
+    // 상태에 따라 금액 조정
+    if (status === 'OPEN') {
+      currentAmount = Math.floor(targetAmount * (0.1 + progress * 0.8)); // 10%~90%
+      if (new Date() > endDate) {
+        status = currentAmount >= targetAmount ? 'SUCCESS' : 'FAILED';
+      }
+    } else if (status === 'SUCCESS') {
+      currentAmount = Math.floor(targetAmount * (1.0 + Math.random() * 0.3)); // 100%~130%
+    } else if (status === 'FAILED') {
+      currentAmount = Math.floor(targetAmount * (0.1 + Math.random() * 0.5)); // 10%~60%
+    }
+
+    // 리워드 티어 생성
+    const rewardTiers: RewardTierResponse[] = [];
+    const tierCount = 3 + Math.floor(Math.random() * 3); // 3-5개
+    for (let j = 0; j < tierCount; j++) {
+      const tierPrice = (j + 1) * 20000 + Math.floor(Math.random() * 50000);
+      const soldQuantity = status === 'SUCCESS' 
+        ? Math.floor(Math.random() * 100)
+        : Math.floor(Math.random() * 50);
+      
+      rewardTiers.push({
+        id: id * 10 + j,
+        title: `얼리버드 ${j + 1}단계`,
+        description: `${tierPrice.toLocaleString()}원 후원 시 받을 수 있는 리워드입니다.`,
+        price: tierPrice,
+        limitQuantity: j < 2 ? 100 : null,
+        soldQuantity,
+      });
+    }
+
+    const creator = createMockUser(1000 + i);
+    const imageUrl = `https://picsum.photos/800/600?random=${id}`;
+
+    const project: ProjectResponse = {
+      id,
+      creator,
+      title: `${projectTitles[titleIndex]} ${i > projectTitles.length ? `(${Math.floor(i / projectTitles.length) + 1})` : ''}`,
+      description: `${descriptions[descIndex]} ${projectTitles[titleIndex]}는 최신 기술과 사용자 경험을 결합한 혁신적인 제품입니다.`,
+      targetAmount,
+      currentAmount,
+      status,
+      rewardTiers,
+      startAt: startDate.toISOString(),
+      endAt: endDate.toISOString(),
+      createdAt: createdAt.toISOString(),
+      imageUrl,
+      imageUrls: [imageUrl],
+      categoryPath: ['테크', '라이프스타일', '홈', '피트니스'][i % 4],
+    };
+
+    // 이미지 저장
+    imageStore.set(`project-${id}-0`, imageUrl);
+    
+    // 프로젝트 저장
+    projectStore.set(id, project);
+  }
+
+  // localStorage에 저장
+  saveProjectsToStorage();
+  console.log(`✅ ${count}개의 Mock 프로젝트가 생성되었습니다!`);
+}
+
 const createMockRewardTier = (
   id: number,
   overrides?: Partial<RewardTierResponse>
@@ -524,9 +644,12 @@ export const projectApi = {
     // 최신순 정렬 (ID가 타임스탬프이므로 큰 순서대로)
     filteredProjects.sort((a, b) => b.id - a.id);
     
-    // limit 적용
-    const limit = params?.limit || 10;
-    return filteredProjects.slice(0, limit);
+    // 페이지네이션 적용
+    const page = params?.page || 1;
+    const limit = params?.limit || 20;
+    const offset = (page - 1) * limit;
+    
+    return filteredProjects.slice(offset, offset + limit);
   },
 
   /**
@@ -917,9 +1040,11 @@ export const auctionApi = {
     // 최신순 정렬 (ID가 타임스탬프이므로 큰 순서대로)
     filteredAuctions.sort((a, b) => b.id - a.id);
     
-    // limit 적용
-    const limit = params?.limit || 10;
-    const limitedAuctions = filteredAuctions.slice(0, limit);
+    // 페이지네이션 적용
+    const page = params?.page || 1;
+    const limit = params?.limit || 20;
+    const offset = (page - 1) * limit;
+    const limitedAuctions = filteredAuctions.slice(offset, offset + limit);
     
     // 각 경매의 이미지를 메모리에서 복원
     const auctionsWithImages = limitedAuctions.map(auction => {
@@ -1558,3 +1683,12 @@ export const authApi = {
     }
   },
 };
+
+// 초기화: 프로젝트가 10개 미만이면 대량 생성 (무한 스크롤 테스트를 위해 100개 생성)
+if (typeof window !== 'undefined') {
+  const projectCount = projectStore.size;
+  if (projectCount < 10) {
+    console.log(`현재 프로젝트 ${projectCount}개 발견. Mock 프로젝트를 생성합니다...`);
+    generateMockProjects(100); // 무한 스크롤 테스트를 위해 100개 생성
+  }
+}
