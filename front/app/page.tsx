@@ -5,17 +5,22 @@ import { HeroBanner } from "@/src/components/hero-banner"
 import { ProjectCard } from "@/src/components/project-card"
 import { AuctionCard } from "@/src/components/auction-card"
 import { EmptyState } from "@/src/components/empty-state"
+import { FilterBar } from "@/src/components/filter-bar"
 import { Button } from "@/src/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/src/components/ui/tabs"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { projectApi, auctionApi } from "@/src/services/api"
 import { ProjectResponse, AuctionResponse } from "@/src/types/api"
+import { useFilterStore, filterAndSortProjects, filterAndSortAuctions } from "@/src/stores/filterStore"
 import { Loader2, Package, Gavel } from "lucide-react"
 
 export default function HomePage() {
   const [projects, setProjects] = useState<ProjectResponse[]>([])
   const [auctions, setAuctions] = useState<AuctionResponse[]>([])
   const [loading, setLoading] = useState(true)
+  
+  // Zustand 필터 상태
+  const { projectStatus, projectSort, auctionStatus, auctionSort } = useFilterStore()
 
   useEffect(() => {
     const loadData = async () => {
@@ -74,8 +79,18 @@ export default function HomePage() {
     return () => clearInterval(interval)
   }, [])
 
+  // 필터링 및 정렬된 프로젝트
+  const filteredProjects = useMemo(() => {
+    return filterAndSortProjects(projects, projectStatus, projectSort)
+  }, [projects, projectStatus, projectSort])
+  
+  // 필터링 및 정렬된 경매
+  const filteredAuctions = useMemo(() => {
+    return filterAndSortAuctions(auctions, auctionStatus, auctionSort)
+  }, [auctions, auctionStatus, auctionSort])
+
   // 프로젝트 데이터를 ProjectCard props로 변환
-  const projectCards = projects.map((project) => {
+  const projectCards = filteredProjects.map((project) => {
     const endTime = new Date(project.endAt)
     const now = new Date()
     // 날짜 유효성 검사
@@ -98,7 +113,7 @@ export default function HomePage() {
   })
 
   // 경매 데이터를 AuctionCard props로 변환
-  const auctionCards = auctions.map((auction) => {
+  const auctionCards = filteredAuctions.map((auction) => {
     const endTime = new Date(auction.endAt)
     const now = new Date()
     // 날짜 유효성 검사
@@ -157,21 +172,38 @@ export default function HomePage() {
               <h2 className="text-2xl font-bold">인기 프로젝트</h2>
               <p className="text-muted-foreground">지금 가장 핫한 크라우드펀딩 프로젝트를 만나보세요</p>
             </div>
+            
+            <FilterBar type="project" />
 
             {loading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="size-8 animate-spin text-primary" />
               </div>
             ) : projectCards.length === 0 ? (
-              <EmptyState
-                icon={Package}
-                title="등록된 프로젝트가 없습니다"
-                description="첫 번째 크라우드펀딩 프로젝트를 시작해보세요"
-                action={{
-                  label: "프로젝트 등록하기",
-                  href: "/project/create",
-                }}
-              />
+              // 필터가 활성화되어 있는지 확인
+              projectStatus !== 'ALL' || projectSort !== 'latest' ? (
+                <EmptyState
+                  icon={Package}
+                  title="필터 조건에 맞는 프로젝트가 없습니다"
+                  description="다른 필터 조건을 선택하거나 필터를 초기화해보세요"
+                  action={{
+                    label: "필터 초기화",
+                    onClick: () => {
+                      useFilterStore.getState().resetFilters()
+                    },
+                  }}
+                />
+              ) : (
+                <EmptyState
+                  icon={Package}
+                  title="등록된 프로젝트가 없습니다"
+                  description="첫 번째 크라우드펀딩 프로젝트를 시작해보세요"
+                  action={{
+                    label: "프로젝트 등록하기",
+                    href: "/project/create",
+                  }}
+                />
+              )
             ) : (
               <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {projectCards.map((project) => (
@@ -186,21 +218,38 @@ export default function HomePage() {
               <h2 className="text-2xl font-bold">라이브 경매</h2>
               <p className="text-muted-foreground">지금 실시간으로 진행 중인 경매에 참여하세요</p>
             </div>
+            
+            <FilterBar type="auction" />
 
             {loading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="size-8 animate-spin text-primary" />
               </div>
             ) : auctionCards.length === 0 ? (
-              <EmptyState
-                icon={Gavel}
-                title="등록된 경매가 없습니다"
-                description="첫 번째 경매를 등록해보세요"
-                action={{
-                  label: "경매 등록하기",
-                  href: "/auction/create",
-                }}
-              />
+              // 필터가 활성화되어 있는지 확인
+              auctionStatus !== 'ALL' || auctionSort !== 'latest' ? (
+                <EmptyState
+                  icon={Gavel}
+                  title="필터 조건에 맞는 경매가 없습니다"
+                  description="다른 필터 조건을 선택하거나 필터를 초기화해보세요"
+                  action={{
+                    label: "필터 초기화",
+                    onClick: () => {
+                      useFilterStore.getState().resetFilters()
+                    },
+                  }}
+                />
+              ) : (
+                <EmptyState
+                  icon={Gavel}
+                  title="등록된 경매가 없습니다"
+                  description="첫 번째 경매를 등록해보세요"
+                  action={{
+                    label: "경매 등록하기",
+                    href: "/auction/create",
+                  }}
+                />
+              )
             ) : (
               <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {auctionCards.map((auction) => (
