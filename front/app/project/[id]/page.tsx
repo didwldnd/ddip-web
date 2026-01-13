@@ -452,25 +452,27 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             </div>
 
             {/* Creator info */}
-            <Card className="mb-6">
-              <CardHeader>
-                <div className="flex items-start gap-4">
-                  <Avatar className="size-12">
-                    <AvatarImage
-                      src={project.creator.profileImageUrl || "/placeholder.svg"}
-                      alt={project.creator.nickname}
-                    />
-                    <AvatarFallback>{project.creator.nickname[0]}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1">
-                    <CardTitle className="text-lg">{project.creator.nickname}</CardTitle>
-                    <div className="mt-1 text-sm text-muted-foreground">
-                      {project.creator.email || "이메일 없음"}
+            {project.creator && (
+              <Card className="mb-6">
+                <CardHeader>
+                  <div className="flex items-start gap-4">
+                    <Avatar className="size-12">
+                      <AvatarImage
+                        src={project.creator.profileImageUrl || "/placeholder.svg"}
+                        alt={project.creator.nickname || "작성자"}
+                      />
+                      <AvatarFallback>{(project.creator.nickname || "작성자")[0]}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1">
+                      <CardTitle className="text-lg">{project.creator.nickname || "알 수 없음"}</CardTitle>
+                      <div className="mt-1 text-sm text-muted-foreground">
+                        {project.creator.email || "이메일 없음"}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </CardHeader>
-            </Card>
+                </CardHeader>
+              </Card>
+            )}
 
             {/* Tabs */}
             <Tabs defaultValue="story" className="w-full">

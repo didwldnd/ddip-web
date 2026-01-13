@@ -679,179 +679,192 @@ const createMockAuction = (
 export const projectApi = {
   /**
    * 프로젝트 목록 조회
+   * TODO: 백엔드에 목록 조회 API가 추가되면 연동 필요
    */
   getProjects: async (params?: {
     status?: ProjectResponse['status'];
     page?: number;
     limit?: number;
   }): Promise<ProjectResponse[]> => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    // localStorage에서 저장된 프로젝트 가져오기
-    const storedProjects = Array.from(projectStore.values());
-    
-    // 상태 필터링
-    let filteredProjects = storedProjects;
-    if (params?.status) {
-      filteredProjects = storedProjects.filter(project => project.status === params.status);
-    }
-    
-    // 최신순 정렬 (ID가 타임스탬프이므로 큰 순서대로)
-    filteredProjects.sort((a, b) => b.id - a.id);
-    
-    // 페이지네이션 적용
-    const page = params?.page || 1;
-    const limit = params?.limit || 20;
-    const offset = (page - 1) * limit;
-    
-    return filteredProjects.slice(offset, offset + limit);
+    // 백엔드에 목록 조회 API가 없으므로 빈 배열 반환
+    // TODO: 백엔드에 GET /api/crowd 목록 조회 API 추가 후 연동
+    console.warn('프로젝트 목록 조회 API가 백엔드에 없습니다. 빈 배열을 반환합니다.');
+    return [];
   },
 
   /**
    * 프로젝트 상세 조회
+   * GET /api/crowd/{projectId}
    */
   getProject: async (id: number): Promise<ProjectResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    
-    // 저장된 프로젝트가 있으면 반환
-    const storedProject = projectStore.get(id);
-    if (storedProject) {
-      // 메모리에서 이미지 복원
-      const imageUrls: string[] = [];
-      for (let i = 0; i < 3; i++) {
-        const imageKey = `project-${id}-${i}`;
-        const image = imageStore.get(imageKey);
-        if (image) {
-          imageUrls.push(image);
-        }
+    try {
+      // 백엔드 응답을 받아서 프론트엔드 타입으로 변환
+      const backendResponse = await apiRequest<any>(`/api/crowd/${id}`, {
+        method: 'GET',
+      });
+
+      // 디버깅: 백엔드 응답 구조 확인
+      console.log('백엔드 프로젝트 응답:', JSON.stringify(backendResponse, null, 2));
+
+      // 백엔드 응답을 프론트엔드 타입으로 변환
+      // 백엔드 필드명이 다를 수 있으므로 안전하게 변환
+      // 백엔드 쿼리 기준: creator_id는 있지만 creator 객체는 없을 수 있음
+      // thumbnail_url은 있지만 imageUrl/imageUrls는 없을 수 있음
+      
+      // Creator 정보 처리 (백엔드에 creator 객체가 없을 수 있음)
+      // 백엔드 쿼리 기준: creator_id는 있지만 creator 객체는 조인하지 않음
+      let creator: UserResponse;
+      if (backendResponse.creator) {
+        // 백엔드에 creator 객체가 있는 경우 (나중에 백엔드에서 추가될 수 있음)
+        creator = {
+          id: backendResponse.creator.id || backendResponse.creatorId || 0,
+          email: backendResponse.creator.email || null,
+          name: backendResponse.creator.name || backendResponse.creator.username || '',
+          nickname: backendResponse.creator.nickname || '',
+          profileImageUrl: backendResponse.creator.profileImageUrl || null,
+          phone: backendResponse.creator.phone || backendResponse.creator.phoneNumber || null,
+        };
+      } else if (backendResponse.creatorId) {
+        // 백엔드에 creatorId만 있는 경우 (현재 상황)
+        // 기본값으로 설정 - 나중에 백엔드에서 creator 정보를 포함시키면 자동으로 사용됨
+        creator = {
+          id: backendResponse.creatorId,
+          email: null,
+          name: '',
+          nickname: `사용자 ${backendResponse.creatorId}`, // 임시로 ID 표시
+          profileImageUrl: null,
+          phone: null,
+        };
+      } else {
+        // creatorId도 없는 경우 (에러 상황)
+        creator = {
+          id: 0,
+          email: null,
+          name: '',
+          nickname: '알 수 없음',
+          profileImageUrl: null,
+          phone: null,
+        };
       }
-      
-      const projectWithImages = {
-        ...storedProject,
-        imageUrl: imageUrls[0] || storedProject.imageUrl,
-        imageUrls: imageUrls.length > 0 ? imageUrls : storedProject.imageUrls,
+
+      // 이미지 처리 (백엔드에 thumbnail_url이 있을 수 있음)
+      const thumbnailUrl = backendResponse.thumbnailUrl || backendResponse.thumbnail_url || null;
+      const imageUrl = backendResponse.imageUrl || thumbnailUrl || null;
+      const imageUrls = backendResponse.imageUrls || (imageUrl ? [imageUrl] : null);
+
+      // 날짜 필드 처리 (백엔드 필드명이 다를 수 있음)
+      const startAt = backendResponse.startAt || backendResponse.start_at || '';
+      const endAt = backendResponse.endAt || backendResponse.end_at || '';
+      const createdAt = backendResponse.createdAt || backendResponse.created_date || backendResponse.createdDate || '';
+
+      const project: ProjectResponse = {
+        id: backendResponse.id,
+        creator,
+        title: backendResponse.title || '',
+        description: backendResponse.description || '',
+        imageUrl,
+        imageUrls,
+        targetAmount: backendResponse.targetAmount || backendResponse.target_amount || 0,
+        currentAmount: backendResponse.currentAmount || backendResponse.current_amount || 0,
+        status: backendResponse.status || 'DRAFT',
+        startAt,
+        endAt,
+        rewardTiers: (backendResponse.rewardTiers || backendResponse.reward_tiers || []).map((tier: any) => ({
+          id: tier.id || 0,
+          title: tier.title || '',
+          description: tier.description || '',
+          price: tier.price || 0,
+          limitQuantity: tier.limitQuantity !== undefined ? tier.limitQuantity : (tier.limit_quantity !== undefined ? tier.limit_quantity : null),
+          soldQuantity: tier.soldQuantity || tier.sold_quantity || 0,
+        })),
+        createdAt,
+        categoryPath: backendResponse.categoryPath || backendResponse.category_path || null,
+        tags: backendResponse.tags || null,
+        summary: backendResponse.summary || null,
       };
-      
-      console.log("저장된 프로젝트 반환:", { id, title: projectWithImages.title });
-      return projectWithImages;
+
+      return project;
+    } catch (error) {
+      console.error('프로젝트 조회 실패:', error);
+      throw error;
     }
-    
-    // 없으면 기본 Mock 데이터 반환
-    console.log("기본 Mock 프로젝트 반환:", id);
-    return createMockProject(id);
   },
 
   /**
    * 프로젝트 생성
+   * POST /api/crowd
+   * 백엔드 응답: Long projectId
    */
   createProject: async (
     data: Omit<ProjectResponse, 'id' | 'creator' | 'createdAt'>
   ): Promise<ProjectResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    
-    // 날짜 유효성 검사 및 로깅
-    console.log("createProject received data:", {
-      startAt: data.startAt,
-      endAt: data.endAt,
-      startAtType: typeof data.startAt,
-      endAtType: typeof data.endAt
-    })
-    
-    // startAt과 endAt이 이미 ISO 문자열인지 확인
-    if (data.startAt && typeof data.startAt === 'string') {
-      const startDate = new Date(data.startAt)
-      if (isNaN(startDate.getTime())) {
-        console.error("Invalid startAt in createProject:", data.startAt)
-        throw new Error("유효하지 않은 시작일입니다")
-      }
-    }
-    
-    if (data.endAt && typeof data.endAt === 'string') {
-      const endDate = new Date(data.endAt)
-      if (isNaN(endDate.getTime())) {
-        console.error("Invalid endAt in createProject:", data.endAt)
-        throw new Error("유효하지 않은 종료일입니다")
-      }
-    }
-    
-    const projectId = Date.now();
-    const currentUser = getCurrentUser();
-    
-    // 이미지를 메모리에 저장 (localStorage 할당량 문제 방지)
-    if (data.imageUrls && data.imageUrls.length > 0) {
-      data.imageUrls.forEach((imageUrl, index) => {
-        imageStore.set(`project-${projectId}-${index}`, imageUrl);
+    try {
+      // 백엔드에 전송할 데이터 형식 변환
+      const requestData = {
+        title: data.title,
+        description: data.description,
+        targetAmount: data.targetAmount,
+        startAt: data.startAt,
+        endAt: data.endAt,
+        rewardTiers: data.rewardTiers.map(tier => ({
+          title: tier.title,
+          description: tier.description,
+          price: tier.price,
+          limitQuantity: tier.limitQuantity,
+        })),
+        categoryPath: data.categoryPath || null,
+        tags: data.tags || null,
+        summary: data.summary || null,
+        // 이미지는 별도 업로드 API가 필요할 수 있음
+        // imageUrls: data.imageUrls || null,
+      };
+
+      console.log('프로젝트 생성 요청:', requestData);
+
+      // 프로젝트 생성 요청
+      const projectId = await apiRequest<number>('/api/crowd', {
+        method: 'POST',
+        body: JSON.stringify(requestData),
       });
-    } else if (data.imageUrl) {
-      imageStore.set(`project-${projectId}-0`, data.imageUrl);
+
+      console.log('프로젝트 생성 성공, ID:', projectId);
+
+      // 생성된 프로젝트 ID로 상세 정보 조회
+      const createdProject = await projectApi.getProject(projectId);
+      
+      return createdProject;
+    } catch (error) {
+      console.error('프로젝트 생성 실패:', error);
+      throw error;
     }
-    
-    // localStorage에는 이미지 없이 저장
-    const dataWithoutImages = {
-      ...data,
-      imageUrl: null,
-      imageUrls: null,
-    };
-    
-    const result = createMockProject(projectId, {
-      ...dataWithoutImages,
-      creator: currentUser,
-      createdAt: new Date().toISOString(),
-    });
-    
-    // 메모리에는 이미지 포함하여 저장
-    const resultWithImages = {
-      ...result,
-      imageUrl: data.imageUrl,
-      imageUrls: data.imageUrls,
-    };
-    
-    // 생성한 프로젝트를 저장소에 저장
-    projectStore.set(projectId, resultWithImages);
-    saveProjectsToStorage(); // localStorage에는 이미지 없이 저장
-    
-    console.log("createProject result:", {
-      id: result.id,
-      title: result.title,
-      startAt: result.startAt,
-      endAt: result.endAt
-    })
-    
-    return result
   },
 
   /**
    * 프로젝트 수정
+   * TODO: 백엔드에 수정 API가 추가되면 연동 필요 (현재 비활성화 상태)
    */
   updateProject: async (
     id: number,
     data: Partial<ProjectResponse>
   ): Promise<ProjectResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    
-    // 기존 프로젝트 가져오기
-    const existingProject = projectStore.get(id);
-    const updatedProject = createMockProject(id, {
-      ...existingProject,
-      ...data,
-    });
-    
-    // 저장소에 업데이트된 프로젝트 저장
-    projectStore.set(id, updatedProject);
-    saveProjectsToStorage(); // localStorage에도 저장
-    
-    return updatedProject;
+    // 백엔드에 수정 API가 비활성화되어 있음
+    throw new Error('프로젝트 수정 API가 현재 비활성화되어 있습니다.');
   },
 
   /**
    * 프로젝트 삭제
+   * DELETE /api/crowd/{projectId}
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   deleteProject: async (id: number): Promise<void> => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    // 저장소에서 프로젝트 삭제
-    projectStore.delete(id);
-    saveProjectsToStorage(); // localStorage에도 반영
+    try {
+      await apiRequest(`/api/crowd/${id}`, {
+        method: 'DELETE',
+      });
+      console.log('프로젝트 삭제 성공:', id);
+    } catch (error) {
+      console.error('프로젝트 삭제 실패:', error);
+      throw error;
+    }
   },
 
   /**
