@@ -19,12 +19,17 @@ interface FilterState {
   auctionStatus: AuctionStatus
   auctionSort: AuctionSort
   
+  // 마지막 방문 경로 (필터 초기화용)
+  lastVisitedPath: string | null
+  
   // 액션
   setProjectStatus: (status: ProjectStatus) => void
   setProjectSort: (sort: ProjectSort) => void
   setAuctionStatus: (status: AuctionStatus) => void
   setAuctionSort: (sort: AuctionSort) => void
+  setLastVisitedPath: (path: string | null) => void
   resetFilters: () => void
+  resetFiltersIfPathChanged: (currentPath: string) => void
 }
 
 const initialState = {
@@ -32,18 +37,50 @@ const initialState = {
   projectSort: 'latest' as ProjectSort,
   auctionStatus: 'ALL' as AuctionStatus,
   auctionSort: 'latest' as AuctionSort,
+  lastVisitedPath: null as string | null,
 }
 
 export const useFilterStore = create<FilterState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       ...initialState,
       
       setProjectStatus: (status) => set({ projectStatus: status }),
       setProjectSort: (sort) => set({ projectSort: sort }),
       setAuctionStatus: (status) => set({ auctionStatus: status }),
       setAuctionSort: (sort) => set({ auctionSort: sort }),
-      resetFilters: () => set(initialState),
+      setLastVisitedPath: (path) => set({ lastVisitedPath: path }),
+      
+      resetFilters: () => set({
+        ...initialState,
+        lastVisitedPath: get().lastVisitedPath, // 경로는 유지
+      }),
+      
+      // 경로가 변경되었는지 확인하고, 변경되었다면 필터 초기화
+      resetFiltersIfPathChanged: (currentPath: string) => {
+        const state = get()
+        const lastPath = state.lastVisitedPath
+        
+        // 필터/정렬이 기본값이 아니면 체크
+        const hasActiveFilters = 
+          state.projectStatus !== 'ALL' ||
+          state.projectSort !== 'latest' ||
+          state.auctionStatus !== 'ALL' ||
+          state.auctionSort !== 'latest'
+        
+        // 다른 페이지에서 왔고, 필터가 활성화되어 있으면 초기화
+        if (lastPath && lastPath !== currentPath && hasActiveFilters) {
+          set({
+            ...initialState,
+            lastVisitedPath: currentPath,
+          })
+          return true // 초기화됨
+        }
+        
+        // 경로 업데이트
+        set({ lastVisitedPath: currentPath })
+        return false // 초기화 안 됨
+      },
     }),
     {
       name: 'ddip-filters', // localStorage 키
