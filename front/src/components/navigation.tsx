@@ -12,6 +12,9 @@ import {
   House,
   TrendingUp,
   Sparkles,
+  Rocket,
+  Gavel,
+  Search,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -62,6 +65,21 @@ export function Navigation() {
             <Button variant="ghost" size="sm" asChild>
               <Link href="/" className="flex items-center gap-2">
                 <House className="size-4" />홈
+              </Link>
+            </Button>
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/projects" className="flex items-center gap-2">
+                <Rocket className="size-4" />크라우드펀딩
+              </Link>
+            </Button>
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/auctions" className="flex items-center gap-2">
+                <Gavel className="size-4" />경매
+              </Link>
+            </Button>
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/search" className="flex items-center gap-2">
+                <Search className="size-4" />검색
               </Link>
             </Button>
           </div>
@@ -148,18 +166,18 @@ export function Navigation() {
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link
-                  href="/?sort=trending"
-                  className="flex items-center gap-2"
-                >
-                  <TrendingUp className="size-4" />
-                  인기
+                <Link href="/projects" className="flex items-center gap-2">
+                  <Rocket className="size-4" />크라우드펀딩
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/?sort=new" className="flex items-center gap-2">
-                  <Sparkles className="size-4" />
-                  신규
+                <Link href="/auctions" className="flex items-center gap-2">
+                  <Gavel className="size-4" />경매
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/search" className="flex items-center gap-2">
+                  <Search className="size-4" />검색
                 </Link>
               </DropdownMenuItem>
               {isAuthenticated ? (

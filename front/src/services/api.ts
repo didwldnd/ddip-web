@@ -14,6 +14,61 @@ import {
 } from '@/src/types/api';
 import { tokenStorage } from '@/src/lib/auth';
 
+// 백엔드 API 기본 URL
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+
+// API 요청 헬퍼 함수
+async function apiRequest<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const token = tokenStorage.getAccessToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string> || {}),
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    ...options,
+    headers,
+    credentials: 'include', // refreshToken 쿠키 저장을 위해 필수
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let errorMessage = '요청 처리 중 오류가 발생했습니다';
+    
+    try {
+      const errorJson = JSON.parse(errorText);
+      errorMessage = errorJson.message || errorJson.error || errorMessage;
+    } catch {
+      errorMessage = errorText || errorMessage;
+    }
+    
+    // 상세한 에러 로깅
+    console.error(`API 요청 실패 [${response.status}]:`, {
+      endpoint,
+      status: response.status,
+      statusText: response.statusText,
+      errorMessage,
+      errorText,
+    });
+    
+    throw new Error(`${errorMessage} (${response.status})`);
+  }
+
+  // DELETE 요청 등은 응답 본문이 없을 수 있음
+  if (response.status === 204 || response.headers.get('content-length') === '0') {
+    return {} as T;
+  }
+
+  return response.json();
+}
+
 // 인메모리 저장소 (Mock API용)
 const projectStore = new Map<number, ProjectResponse>();
 const auctionStore = new Map<number, AuctionResponse>();
@@ -1494,26 +1549,159 @@ export const userApi = {
 export const authApi = {
   /**
    * 로그인
+   * POST /api/users/login
+   * 백엔드 응답:
+   * - 헤더: Authorization: Bearer {accessToken}
+   * - 쿠키: refresh_token={refreshToken} (HttpOnly, Secure)
+   * - 본문: { "access_token": "{accessToken}" }
    */
   login: async (data: LoginRequest): Promise<AuthResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // 요청 데이터 검증 및 로깅 (try-catch 밖에서 먼저 실행)
+    const requestBody = {
+      email: data.email,
+      password: data.password,
+    };
     
-    // Mock: 이메일과 비밀번호 검증 (실제로는 백엔드에서 처리)
-    if (data.email && data.password) {
-      const user = createMockUser(1, {
-        email: data.email,
-        name: '사용자',
-        nickname: 'nickname1',
-      });
-      
-      return {
-        accessToken: `mock-access-token-${Date.now()}`,
-        refreshToken: `mock-refresh-token-${Date.now()}`,
-        user,
-      };
+    const jsonBody = JSON.stringify(requestBody);
+    const loginUrl = `${API_BASE_URL}/api/users/login`;
+    
+    // JSON body 로그 출력 (확실히 출력되도록 - 여러 방법으로 출력)
+    console.group('🔵 로그인 요청 상세 정보');
+    console.log('📤 요청 URL:', loginUrl);
+    console.log('📤 요청 메서드:', 'POST');
+    console.log('📤 요청 헤더:', {
+      'Content-Type': 'application/json',
+    });
+    console.log('📤 요청 Body (JSON 문자열):', jsonBody);
+    console.log('📤 요청 Body (객체):', {
+      email: requestBody.email,
+      password: requestBody.password ? `***${requestBody.password.slice(-2)}` : '(없음)',
+    });
+    console.log('📤 Body 길이:', jsonBody.length, 'bytes');
+    console.log('📤 Body 타입:', typeof jsonBody);
+    console.log('📤 API_BASE_URL:', API_BASE_URL);
+    console.groupEnd();
+    
+    // 추가: alert로도 확인 (개발 중에만)
+    if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+      console.warn('⚠️ JSON Body 확인:', jsonBody);
     }
     
-    throw new Error('이메일 또는 비밀번호가 올바르지 않습니다');
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/users/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include', // refreshToken 쿠키 저장을 위해 필수
+        body: jsonBody,
+      });
+      
+      console.log('응답 받음:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage = '이메일 또는 비밀번호가 올바르지 않습니다';
+        
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.message || errorJson.error || errorMessage;
+        } catch {
+          // JSON 파싱 실패 시 기본 메시지 사용
+        }
+        
+        console.error('로그인 실패:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorMessage,
+        });
+        
+        throw new Error(errorMessage);
+      }
+
+      // 응답 본문에서 access_token 추출
+      // 백엔드 응답 형식: { "access_token": "..." }
+      const responseData = await response.json();
+      const accessToken = responseData.access_token;
+      
+      if (!accessToken) {
+        throw new Error('로그인 응답에 토큰이 없습니다');
+      }
+
+      // accessToken 저장
+      tokenStorage.setAccessToken(accessToken);
+      
+      // refreshToken은 쿠키에 저장되므로 별도 저장 불필요
+      // 백엔드가 자동으로 쿠키를 처리함
+
+      // 로그인 응답에 사용자 정보가 포함되어 있는지 확인
+      let user: UserResponse | null = null;
+      
+      if (responseData.user) {
+        // 로그인 응답에 사용자 정보가 포함되어 있는 경우
+        user = responseData.user;
+        if (user) {
+          tokenStorage.setUser(user);
+        }
+      } else if (responseData.id || responseData.email) {
+        // 응답 본문 자체가 사용자 정보인 경우 (UserResponseDto)
+        user = {
+          id: responseData.id,
+          email: responseData.email,
+          name: responseData.name || responseData.username || '',
+          nickname: responseData.nickname || '',
+          profileImageUrl: responseData.profileImageUrl || null,
+          phone: responseData.phoneNumber || responseData.phone || null,
+        };
+        tokenStorage.setUser(user);
+      }
+      // 백엔드에 /api/users/me가 없으므로 로그인 직후 사용자 정보 조회하지 않음
+      // 사용자 정보는 나중에 필요할 때 조회하거나, 다른 엔드포인트를 사용해야 함
+      
+      return {
+        accessToken,
+        refreshToken: '', // refreshToken은 쿠키에 저장되므로 빈 문자열
+        user: user || {
+          // 임시 사용자 정보 (나중에 실제 사용자 정보로 교체 필요)
+          id: 0,
+          email: null,
+          name: '',
+          nickname: '',
+          profileImageUrl: null,
+          phone: null,
+        },
+      };
+    } catch (error) {
+      console.error('로그인 실패 상세:', {
+        error,
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      
+      // 네트워크 오류 처리
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        // CORS 에러인지 확인
+        const errorStr = String(error);
+        if (errorStr.includes('CORS') || errorStr.includes('cors')) {
+          throw new Error(
+            'CORS 정책 오류: 백엔드 CORS 설정을 확인해주세요.\n' +
+            '필요한 설정:\n' +
+            '1. setAllowCredentials(true)\n' +
+            '2. setAllowedOrigins(List.of("http://localhost:3000"))\n' +
+            '3. setExposedHeaders(List.of("Authorization"))'
+          );
+        }
+        throw new Error('백엔드 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인해주세요.');
+      }
+      
+      // 에러 메시지 그대로 전달
+      throw error instanceof Error ? error : new Error('로그인에 실패했습니다');
+    }
   },
 
   /**
@@ -1524,6 +1712,34 @@ export const authApi = {
   register: async (data: RegisterRequest): Promise<AuthResponse> => {
     const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
     
+    // 회원가입 요청 데이터 준비
+    const requestBody = {
+      email: data.email,
+      password: data.password,
+      username: data.username,
+      nickname: data.nickname,
+      phoneNumber: data.phoneNumber,
+      account: data.account || null,
+      accountHolder: data.accountHolder || null,
+      bankType: data.bankType || null,
+    };
+    const jsonBody = JSON.stringify(requestBody);
+    
+    // 회원가입 요청 로그
+    console.group('🟢 회원가입 요청 상세 정보');
+    console.log('📤 요청 URL:', `${API_BASE_URL}/api/users/register`);
+    console.log('📤 요청 메서드:', 'POST');
+    console.log('📤 요청 헤더:', {
+      'Content-Type': 'application/json',
+    });
+    console.log('📤 요청 Body (JSON 문자열):', jsonBody);
+    console.log('📤 요청 Body (객체):', {
+      ...requestBody,
+      password: '***' + (requestBody.password?.slice(-2) || ''),
+    });
+    console.log('📤 Body 길이:', jsonBody.length, 'bytes');
+    console.groupEnd();
+    
     try {
       // 회원가입 요청
       const response = await fetch(`${API_BASE_URL}/api/users/register`, {
@@ -1531,16 +1747,14 @@ export const authApi = {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          email: data.email,
-          password: data.password,
-          username: data.username,
-          nickname: data.nickname,
-          phoneNumber: data.phoneNumber,
-          account: data.account || null,
-          accountHolder: data.accountHolder || null,
-          bankType: data.bankType || null,
-        }),
+        credentials: 'include', // refreshToken 쿠키 저장을 위해 필수
+        body: jsonBody,
+      });
+      
+      console.log('회원가입 응답 받음:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
       });
 
       if (!response.ok) {
@@ -1562,17 +1776,51 @@ export const authApi = {
       
       // 백엔드가 UserResponseDto만 반환하는 경우, 자동 로그인 처리
       // 회원가입 후 자동 로그인을 위해 로그인 API 호출
-      const loginResponse = await authApi.login({
-        email: data.email,
-        password: data.password,
-      });
-      
-      return loginResponse;
+      console.log('회원가입 성공, 자동 로그인 시도...');
+      try {
+        const loginResponse = await authApi.login({
+          email: data.email,
+          password: data.password,
+        });
+        console.log('자동 로그인 성공');
+        return loginResponse;
+      } catch (loginError) {
+        // 자동 로그인 실패해도 회원가입은 성공한 것으로 처리
+        console.warn('자동 로그인 실패 (회원가입은 성공):', loginError);
+        // 사용자 정보만 반환 (수동 로그인 필요)
+        const user: UserResponse = {
+          id: userData.id,
+          email: userData.email,
+          name: userData.name || userData.username || '',
+          nickname: userData.nickname || '',
+          profileImageUrl: userData.profileImageUrl || null,
+          phone: userData.phoneNumber || userData.phone || null,
+        };
+        return {
+          accessToken: '',
+          refreshToken: '',
+          user,
+        };
+      }
     } catch (error) {
-      console.error('회원가입 실패:', error);
+      console.error('회원가입 실패 상세:', {
+        error,
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
       
       // 네트워크 오류인 경우 더 명확한 메시지 제공
       if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        const errorStr = String(error);
+        if (errorStr.includes('CORS') || errorStr.includes('cors')) {
+          throw new Error(
+            'CORS 정책 오류: 백엔드 CORS 설정을 확인해주세요.\n' +
+            '필요한 설정:\n' +
+            '1. setAllowCredentials(true)\n' +
+            '2. setAllowedOrigins(List.of("http://localhost:3000"))\n' +
+            '3. /api/users/register 경로를 permitAll()로 설정'
+          );
+        }
         throw new Error('백엔드 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인해주세요.');
       }
       
@@ -1604,15 +1852,37 @@ export const authApi = {
 
   /**
    * 현재 사용자 정보 조회 (토큰으로)
+   * GET /api/users/me
    */
   getCurrentUser: async (): Promise<UserResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    const savedUser = tokenStorage.getUser();
-    if (savedUser) {
-      return savedUser;
+    try {
+      const user = await apiRequest<UserResponse>('/api/users/me', {
+        method: 'GET',
+      });
+      
+      // 사용자 정보를 localStorage에 저장
+      tokenStorage.setUser(user);
+      
+      return user;
+    } catch (error) {
+      console.error('사용자 정보 조회 실패:', error);
+      
+      // 401 Unauthorized인 경우 토큰이 만료되었거나 유효하지 않음
+      if (error instanceof Error && (error.message.includes('401') || error.message.includes('Unauthorized'))) {
+        // 토큰 삭제
+        tokenStorage.clearAll();
+        throw new Error('로그인이 필요합니다');
+      }
+      
+      // 네트워크 오류인 경우 저장된 사용자 정보 반환 (fallback)
+      const savedUser = tokenStorage.getUser();
+      if (savedUser) {
+        console.warn('백엔드에서 사용자 정보를 가져올 수 없어 저장된 정보를 사용합니다');
+        return savedUser;
+      }
+      
+      throw new Error('로그인이 필요합니다');
     }
-    // 토큰이 없으면 에러 발생 (실제로는 인증 필요)
-    throw new Error('로그인이 필요합니다');
   },
 
   /**

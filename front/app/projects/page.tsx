@@ -6,15 +6,12 @@ import { EmptyState } from "@/src/components/empty-state"
 import { FilterBar } from "@/src/components/filter-bar"
 import { Button } from "@/src/components/ui/button"
 import { useState, useEffect, useMemo, useCallback, useRef } from "react"
-import { usePathname } from "next/navigation"
 import { projectApi } from "@/src/services/api"
 import { ProjectResponse } from "@/src/types/api"
 import { useFilterStore, filterAndSortProjects } from "@/src/stores/filterStore"
-import { saveScrollPosition, restoreScrollPosition } from "@/src/lib/scroll-restore"
 import { Loader2, Package } from "lucide-react"
 
 export default function ProjectsPage() {
-  const pathname = usePathname()
   const [projects, setProjects] = useState<ProjectResponse[]>([])
   const [loading, setLoading] = useState(true)
   const [hasMore, setHasMore] = useState(true)
@@ -23,121 +20,10 @@ export default function ProjectsPage() {
   const observerTarget = useRef<HTMLDivElement>(null)
   const PAGE_SIZE = 20
   
-  const { projectStatus, projectSort, resetFiltersIfPathChanged } = useFilterStore()
-  const isBackNavigation = useRef(false)
-  const hasInitialData = useRef(false) // 초기 데이터 로드 여부 추적
-  const CACHE_KEY = 'ddip_projects_cache'
-  
-  // 뒤로가기/앞으로가기 감지
-  useEffect(() => {
-    const handlePopState = () => {
-      isBackNavigation.current = true
-      // 충분한 시간 후 리셋 (데이터 로드 및 스크롤 복원 완료 대기)
-      setTimeout(() => {
-        isBackNavigation.current = false
-      }, 1000)
-    }
-    
-    window.addEventListener('popstate', handlePopState)
-    return () => {
-      window.removeEventListener('popstate', handlePopState)
-    }
-  }, [])
-  
-  // 페이지 진입 시 필터 초기화 체크
-  useEffect(() => {
-    // 뒤로가기/앞으로가기면 필터 초기화하지 않음
-    if (!isBackNavigation.current) {
-      resetFiltersIfPathChanged(pathname)
-      hasInitialData.current = false // 일반 네비게이션 시 초기화
-    } else {
-      // 뒤로가기 시 경로만 업데이트 (필터 유지)
-      useFilterStore.getState().setLastVisitedPath(pathname)
-    }
-  }, [pathname, resetFiltersIfPathChanged])
-  
-  // 페이지를 떠날 때 스크롤 위치 및 데이터 저장
-  useEffect(() => {
-    return () => {
-      saveScrollPosition(pathname)
-      // 데이터 캐싱
-      if (projects.length > 0) {
-        try {
-          sessionStorage.setItem(CACHE_KEY, JSON.stringify({
-            data: projects,
-            status: projectStatus,
-            sort: projectSort,
-            page: pageRef.current
-          }))
-        } catch (error) {
-          console.error("데이터 캐싱 실패:", error)
-        }
-      }
-    }
-  }, [pathname, projects, projectStatus, projectSort])
-  
-  // 스크롤 이벤트 리스너 (스크롤 위치 주기적 저장)
-  useEffect(() => {
-    let scrollTimeout: NodeJS.Timeout | null = null
-    
-    const handleScroll = () => {
-      // 스크롤이 멈춘 후 저장 (성능 최적화)
-      if (scrollTimeout) {
-        clearTimeout(scrollTimeout)
-      }
-      scrollTimeout = setTimeout(() => {
-        saveScrollPosition(pathname)
-      }, 150) // 150ms 후 저장
-    }
-    
-    window.addEventListener('scroll', handleScroll, { passive: true })
-    
-    return () => {
-      window.removeEventListener('scroll', handleScroll)
-      if (scrollTimeout) {
-        clearTimeout(scrollTimeout)
-      }
-    }
-  }, [pathname])
+  const { projectStatus, projectSort } = useFilterStore()
 
   // 초기 데이터 로드 및 필터/정렬 변경 시 초기화
   useEffect(() => {
-    // 뒤로가기로 돌아왔을 때 캐시된 데이터 복원
-    if (isBackNavigation.current) {
-      try {
-        const cached = sessionStorage.getItem(CACHE_KEY)
-        if (cached) {
-          const { data: cachedData, status: cachedStatus, sort: cachedSort, page: cachedPage } = JSON.parse(cached)
-          // 필터가 동일하면 캐시된 데이터 사용
-          if (cachedStatus === projectStatus && cachedSort === projectSort) {
-            console.log(`[ProjectsPage] 캐시된 데이터 복원: ${cachedData.length}개`)
-            setProjects(cachedData)
-            setHasMore(cachedData.length === PAGE_SIZE)
-            pageRef.current = cachedPage
-            hasInitialData.current = true
-            setLoading(false)
-            
-            // 스크롤 위치 복원
-            setTimeout(() => {
-              restoreScrollPosition(pathname, 0)
-            }, 100)
-            return
-          }
-        }
-      } catch (error) {
-        console.error("캐시 복원 실패:", error)
-      }
-    }
-    
-    // 뒤로가기로 돌아왔고 이미 데이터가 있으면 다시 로드하지 않음
-    if (isBackNavigation.current && hasInitialData.current && projects.length > 0) {
-      // 스크롤 위치만 복원
-      setTimeout(() => {
-        restoreScrollPosition(pathname, 0)
-      }, 50)
-      return
-    }
-    
     const loadData = async () => {
       try {
         setLoading(true)
@@ -152,32 +38,10 @@ export default function ProjectsPage() {
         
         console.log(`[ProjectsPage] 로드된 데이터: ${data.length}개, 페이지: 1, 상태: ${projectStatus}`)
         setProjects(data)
-        hasInitialData.current = true
-        
-        // 데이터 캐싱
-        try {
-          sessionStorage.setItem(CACHE_KEY, JSON.stringify({
-            data,
-            status: projectStatus,
-            sort: projectSort,
-            page: pageRef.current
-          }))
-        } catch (error) {
-          console.error("데이터 캐싱 실패:", error)
-        }
-        
         // API에서 필터링된 데이터를 가져오므로, 실제 응답 길이로 판단
         const hasMoreData = data.length === PAGE_SIZE
         console.log(`[ProjectsPage] hasMore 설정: ${hasMoreData} (데이터 ${data.length}개, PAGE_SIZE ${PAGE_SIZE}개)`)
         setHasMore(hasMoreData)
-        
-        // 데이터 로드 완료 후 스크롤 위치 복원 (뒤로가기 시)
-        if (isBackNavigation.current) {
-          // DOM 렌더링 완료 대기
-          setTimeout(() => {
-            restoreScrollPosition(pathname, 0)
-          }, 200)
-        }
       } catch (error) {
         console.error("데이터 로드 실패:", error)
       } finally {
@@ -186,7 +50,7 @@ export default function ProjectsPage() {
     }
 
     loadData()
-  }, [projectStatus, projectSort, pathname])
+  }, [projectStatus, projectSort])
 
   // 상태 주기적 체크 (1분마다) - 첫 페이지만 새로고침
   useEffect(() => {

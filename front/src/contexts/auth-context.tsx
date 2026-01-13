@@ -29,24 +29,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const token = tokenStorage.getAccessToken()
         const savedUser = tokenStorage.getUser()
 
-        if (token && savedUser) {
-          // 토큰이 있으면 사용자 정보 갱신 시도
+        if (token) {
+          // 토큰이 있으면 저장된 사용자 정보 사용
+          if (savedUser) {
+            setUser(savedUser)
+          }
+          
+          // 백엔드에 /api/users/me가 있으면 사용자 정보 갱신 시도
+          // 없으면 저장된 정보만 사용
           try {
             const currentUser = await authApi.getCurrentUser()
             setUser(currentUser)
             tokenStorage.setUser(currentUser)
           } catch (error) {
-            // 토큰이 만료되었거나 유효하지 않으면 로그아웃 처리
-            tokenStorage.clearAll()
-            setUser(null)
+            // getCurrentUser 실패해도 토큰이 있으면 인증된 것으로 처리
+            // (백엔드에 해당 엔드포인트가 없을 수 있음)
+            console.warn("사용자 정보 조회 실패 (엔드포인트가 없을 수 있음):", error)
+            // 저장된 사용자 정보가 있으면 그대로 사용
+            if (savedUser) {
+              setUser(savedUser)
+            }
           }
         } else {
+          // 토큰이 없으면 로그아웃 상태
           setUser(null)
         }
       } catch (error) {
         console.error("인증 초기화 실패:", error)
-        tokenStorage.clearAll()
-        setUser(null)
+        // 에러 발생 시에도 토큰이 있으면 유지
+        const token = tokenStorage.getAccessToken()
+        if (!token) {
+          tokenStorage.clearAll()
+          setUser(null)
+        }
       } finally {
         setIsLoading(false)
       }
@@ -63,21 +78,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.refreshToken) {
         tokenStorage.setRefreshToken(response.refreshToken)
       }
-      tokenStorage.setUser(response.user)
       
-      setUser(response.user)
+      // 사용자 정보가 있으면 저장, 없어도 토큰만 있으면 로그인 성공
+      if (response.user && response.user.id !== 0) {
+        tokenStorage.setUser(response.user)
+        setUser(response.user)
+      } else {
+        // 사용자 정보가 없으면 null로 설정 (토큰은 저장됨)
+        setUser(null)
+      }
     } catch (error) {
       throw error
     }
   }
 
-  const register = async (data: {
-    email: string
-    password: string
-    name: string
-    nickname: string
-    phone?: string
-  }) => {
+  const register = async (data: RegisterRequest) => {
     try {
       const response: AuthResponse = await authApi.register(data)
       
@@ -85,9 +100,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.refreshToken) {
         tokenStorage.setRefreshToken(response.refreshToken)
       }
-      tokenStorage.setUser(response.user)
       
-      setUser(response.user)
+      // 사용자 정보가 있으면 저장, 없어도 토큰만 있으면 회원가입 성공
+      if (response.user && response.user.id !== 0) {
+        tokenStorage.setUser(response.user)
+        setUser(response.user)
+      } else {
+        // 사용자 정보가 없으면 null로 설정 (토큰은 저장됨)
+        setUser(null)
+      }
     } catch (error) {
       throw error
     }
@@ -111,9 +132,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       tokenStorage.setUser(currentUser)
     } catch (error) {
       console.error("사용자 정보 갱신 실패:", error)
-      // 토큰이 만료되었으면 로그아웃 처리
-      tokenStorage.clearAll()
-      setUser(null)
+      // getCurrentUser 실패해도 토큰이 있으면 로그아웃하지 않음
+      // (백엔드에 해당 엔드포인트가 없을 수 있음)
+      const token = tokenStorage.getAccessToken()
+      if (!token) {
+        // 토큰이 없으면 로그아웃 처리
+        tokenStorage.clearAll()
+        setUser(null)
+      }
     }
   }
 
@@ -135,7 +161,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value: AuthContextType = {
     user,
     isLoading,
-    isAuthenticated: !!user,
+    // 토큰이 있으면 인증된 것으로 처리 (사용자 정보가 없어도)
+    isAuthenticated: !!tokenStorage.getAccessToken(),
     login,
     register,
     logout,
