@@ -2,12 +2,18 @@ name: CI (Backend - Gradle)
 
 on:
   pull_request:
-    branches: [ "main", "develop" ]
+    branches:
+      - "main"
+      - "develop"
+      - "feature/**"
     paths:
       - "backend/**"
       - ".github/workflows/**"
   push:
-    branches: [ "main", "develop" ]
+    branches:
+      - "main"
+      - "develop"
+      - "feature/**"
     paths:
       - "backend/**"
       - ".github/workflows/**"
