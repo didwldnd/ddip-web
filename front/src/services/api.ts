@@ -838,10 +838,18 @@ export const authApi = {
 
   /**
    * 로그아웃
+   * POST /api/users/logout
    */
   logout: async (): Promise<void> => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    // Mock: 토큰 삭제는 클라이언트에서 처리
+    try {
+      await apiRequest<void>('/api/users/logout', {
+        method: 'POST',
+      });
+    } catch (error) {
+      console.error('로그아웃 API 호출 실패:', error);
+      // API 호출 실패해도 클라이언트에서 토큰 삭제는 진행
+      // (네트워크 오류 등으로 백엔드 호출이 실패해도 로그아웃은 처리)
+    }
   },
 
   /**
@@ -855,6 +863,9 @@ export const authApi = {
   /**
    * 현재 사용자 정보 조회 (토큰으로)
    * GET /api/users/profile
+   * 
+   * 주의: 백엔드에 해당 엔드포인트가 없을 수 있음
+   * 이 경우 에러를 던지고, 호출하는 쪽에서 처리해야 함
    */
   getCurrentUser: async (): Promise<UserResponse> => {
     try {
@@ -884,6 +895,8 @@ export const authApi = {
       
       return user;
     } catch (error) {
+      console.error('getCurrentUser 실패:', error);
+      
       // 401 Unauthorized인 경우 토큰이 만료되었거나 유효하지 않음
       if (error instanceof Error && (error.message.includes('401') || error.message.includes('Unauthorized'))) {
         // 토큰 삭제
@@ -891,13 +904,18 @@ export const authApi = {
         throw new Error('로그인이 필요합니다');
       }
       
-      // 네트워크 오류인 경우 저장된 사용자 정보 반환 (fallback)
-      const savedUser = tokenStorage.getUser();
-      if (savedUser) {
-        return savedUser;
+      // 404 Not Found인 경우 엔드포인트가 없을 수 있음
+      if (error instanceof Error && (error.message.includes('404') || error.message.includes('Not Found'))) {
+        throw new Error('사용자 정보 조회 API가 없습니다');
       }
       
-      throw new Error('로그인이 필요합니다');
+      // 500 Internal Server Error인 경우 백엔드 에러
+      if (error instanceof Error && (error.message.includes('500') || error.message.includes('Internal Server Error'))) {
+        throw new Error('서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+      }
+      
+      // 다른 에러는 그대로 던짐
+      throw error;
     }
   },
 

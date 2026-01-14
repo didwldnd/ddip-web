@@ -28,46 +28,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const initAuth = async () => {
       try {
         const token = tokenStorage.getAccessToken()
-        const savedUser = tokenStorage.getUser()
 
         if (token) {
           setIsAuthenticated(true)
-          // 토큰이 있으면 저장된 사용자 정보 사용
-          if (savedUser) {
-            setUser(savedUser)
-          }
           
-          // 백엔드에 /api/users/me가 있으면 사용자 정보 갱신 시도
-          // 없으면 저장된 정보만 사용
+          // 백엔드에서 최신 사용자 정보를 가져오기 시도
           try {
             const currentUser = await authApi.getCurrentUser()
             setUser(currentUser)
             tokenStorage.setUser(currentUser)
           } catch (error) {
-            // getCurrentUser 실패해도 토큰이 있으면 인증된 것으로 처리
-            // (백엔드에 해당 엔드포인트가 없을 수 있음)
-            console.warn("사용자 정보 조회 실패 (엔드포인트가 없을 수 있음):", error)
-            // 저장된 사용자 정보가 있으면 그대로 사용
-            if (savedUser) {
+            // getCurrentUser 실패 시 저장된 사용자 정보 사용 (토큰은 유효하므로)
+            console.warn("사용자 정보 조회 실패, 저장된 정보 사용:", error)
+            const savedUser = tokenStorage.getUser()
+            if (savedUser && savedUser.id !== 0) {
               setUser(savedUser)
+            } else {
+              // 사용자 정보가 없으면 null로 설정 (토큰은 유지)
+              setUser(null)
             }
           }
         } else {
           // 토큰이 없으면 로그아웃 상태
+          tokenStorage.clearAll()
           setIsAuthenticated(false)
           setUser(null)
         }
       } catch (error) {
         console.error("인증 초기화 실패:", error)
-        // 에러 발생 시에도 토큰이 있으면 유지
-        const token = tokenStorage.getAccessToken()
-        if (!token) {
-          tokenStorage.clearAll()
-          setIsAuthenticated(false)
-          setUser(null)
-        } else {
-          setIsAuthenticated(true)
-        }
+        // 에러 발생 시 모든 정보 삭제
+        tokenStorage.clearAll()
+        setIsAuthenticated(false)
+        setUser(null)
       } finally {
         setIsLoading(false)
       }
@@ -86,22 +78,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setIsAuthenticated(true)
       
-      // 사용자 정보가 있으면 저장
+      // 이전 사용자 정보 삭제 (새로운 로그인 전에)
+      tokenStorage.removeUser()
+      
+      // 로그인 응답에 사용자 정보가 있으면 사용
       if (response.user && response.user.id !== 0) {
         tokenStorage.setUser(response.user)
         setUser(response.user)
       } else {
-        // 사용자 정보가 없으면 /api/users/profile로 조회 시도
-        // 토큰이 저장된 후 약간의 지연을 두고 호출 (백엔드 토큰 검증 대기)
+        // 로그인 응답에 사용자 정보가 없으면 백엔드에서 가져오기 시도
         try {
-          await new Promise(resolve => setTimeout(resolve, 500)) // 500ms 지연
+          // 토큰이 저장된 후 약간의 지연을 두고 호출 (백엔드 토큰 검증 대기)
+          await new Promise(resolve => setTimeout(resolve, 300)) // 300ms 지연
           const currentUser = await authApi.getCurrentUser()
           tokenStorage.setUser(currentUser)
           setUser(currentUser)
         } catch (error) {
-          // 사용자 정보 조회 실패해도 로그인은 성공한 것으로 처리
-          // 토큰은 저장되었으므로 나중에 사용자 정보를 가져올 수 있음
+          // getCurrentUser 실패 시 사용자 정보 없이 로그인 유지
+          console.warn('사용자 정보 조회 실패:', error)
           setUser(null)
+          tokenStorage.removeUser()
         }
       }
     } catch (error) {
