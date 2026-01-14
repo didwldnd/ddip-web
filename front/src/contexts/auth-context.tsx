@@ -79,13 +79,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         tokenStorage.setRefreshToken(response.refreshToken)
       }
       
-      // 사용자 정보가 있으면 저장, 없어도 토큰만 있으면 로그인 성공
+      // 사용자 정보가 있으면 저장
       if (response.user && response.user.id !== 0) {
         tokenStorage.setUser(response.user)
         setUser(response.user)
       } else {
-        // 사용자 정보가 없으면 null로 설정 (토큰은 저장됨)
-        setUser(null)
+        // 사용자 정보가 없으면 /api/users/profile로 조회 시도
+        // 토큰이 저장된 후 약간의 지연을 두고 호출 (백엔드 토큰 검증 대기)
+        try {
+          await new Promise(resolve => setTimeout(resolve, 500)) // 500ms 지연
+          const currentUser = await authApi.getCurrentUser()
+          tokenStorage.setUser(currentUser)
+          setUser(currentUser)
+        } catch (error) {
+          // 사용자 정보 조회 실패해도 로그인은 성공한 것으로 처리
+          // 토큰은 저장되었으므로 나중에 사용자 정보를 가져올 수 있음
+          setUser(null)
+        }
       }
     } catch (error) {
       throw error

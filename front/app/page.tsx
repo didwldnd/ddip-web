@@ -24,13 +24,8 @@ export default function HomePage() {
       try {
         setLoading(true)
         
-        // 모든 프로젝트와 경매의 상태 일괄 체크
-        await Promise.all([
-          projectApi.checkAllProjectsStatus(),
-          auctionApi.checkAllAuctionsStatus(),
-        ])
-        
         // 인기 프로젝트/경매 로드 (인기순 정렬, 각 8개)
+        // 백엔드에서 상태 관리를 하므로 클라이언트에서 상태 체크 불필요
         const [allProjects, allAuctions] = await Promise.all([
           projectApi.getProjects({ limit: 50 }),
           auctionApi.getAuctions({ limit: 50 }),
@@ -76,6 +71,11 @@ export default function HomePage() {
         setUrgentAuctions(urgentAuc.slice(0, 8))
       } catch (error) {
         console.error("데이터 로드 실패:", error)
+        // 에러가 발생해도 빈 배열로 설정하여 UI가 깨지지 않도록 함
+        setPopularProjects([])
+        setPopularAuctions([])
+        setUrgentProjects([])
+        setUrgentAuctions([])
       } finally {
         setLoading(false)
       }
@@ -84,16 +84,11 @@ export default function HomePage() {
     loadData()
   }, [])
 
-  // 상태 주기적 체크 (1분마다)
+  // 데이터 주기적 새로고침 (1분마다)
   useEffect(() => {
-    const checkStatus = async () => {
+    const refreshData = async () => {
       try {
-        await Promise.all([
-          projectApi.checkAllProjectsStatus(),
-          auctionApi.checkAllAuctionsStatus(),
-        ])
-        
-        // 데이터 새로고침
+        // 데이터 새로고침 (백엔드에서 최신 상태 반영)
         const [allProjects, allAuctions] = await Promise.all([
           projectApi.getProjects({ limit: 50 }),
           auctionApi.getAuctions({ limit: 50 }),
@@ -136,11 +131,12 @@ export default function HomePage() {
         })
         setUrgentAuctions(urgentAuc.slice(0, 8))
       } catch (error) {
-        console.error("상태 체크 실패:", error)
+        console.error("데이터 새로고침 실패:", error)
+        // 에러가 발생해도 기존 데이터 유지
       }
     }
 
-    const interval = setInterval(checkStatus, 60000)
+    const interval = setInterval(refreshData, 60000)
     return () => clearInterval(interval)
   }, [])
 

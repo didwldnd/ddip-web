@@ -15,7 +15,9 @@ export const tokenStorage = {
 
   setAccessToken: (token: string): void => {
     if (typeof window === 'undefined') return
-    localStorage.setItem(ACCESS_TOKEN_KEY, token)
+    // 토큰 앞뒤 공백 및 따옴표 제거
+    const cleanToken = token.trim().replace(/^["']|["']$/g, '')
+    localStorage.setItem(ACCESS_TOKEN_KEY, cleanToken)
   },
 
   removeAccessToken: (): void => {

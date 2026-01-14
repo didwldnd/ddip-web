@@ -29,7 +29,9 @@ async function apiRequest<T>(
   };
 
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+    // 토큰 앞뒤 공백 제거 및 Bearer 형식 확인
+    const cleanToken = token.trim().replace(/^["']|["']$/g, ''); // 앞뒤 따옴표 제거
+    headers['Authorization'] = `Bearer ${cleanToken}`;
   }
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -41,21 +43,20 @@ async function apiRequest<T>(
   if (!response.ok) {
     const errorText = await response.text();
     let errorMessage = '요청 처리 중 오류가 발생했습니다';
+    let errorJson: any = null;
     
     try {
-      const errorJson = JSON.parse(errorText);
+      errorJson = JSON.parse(errorText);
       errorMessage = errorJson.message || errorJson.error || errorMessage;
     } catch {
       errorMessage = errorText || errorMessage;
     }
     
-    // 상세한 에러 로깅
+    // 에러 로깅
     console.error(`API 요청 실패 [${response.status}]:`, {
       endpoint,
       status: response.status,
-      statusText: response.statusText,
       errorMessage,
-      errorText,
     });
     
     throw new Error(`${errorMessage} (${response.status})`);
@@ -66,7 +67,9 @@ async function apiRequest<T>(
     return {} as T;
   }
 
-  return response.json();
+  // 응답 본문 파싱
+  const responseData = await response.json();
+  return responseData as T;
 }
 
 // 인메모리 저장소 (Mock API용)
@@ -679,17 +682,122 @@ const createMockAuction = (
 export const projectApi = {
   /**
    * 프로젝트 목록 조회
-   * TODO: 백엔드에 목록 조회 API가 추가되면 연동 필요
+   * GET /api/crowd
    */
   getProjects: async (params?: {
     status?: ProjectResponse['status'];
     page?: number;
     limit?: number;
   }): Promise<ProjectResponse[]> => {
-    // 백엔드에 목록 조회 API가 없으므로 빈 배열 반환
-    // TODO: 백엔드에 GET /api/crowd 목록 조회 API 추가 후 연동
-    console.warn('프로젝트 목록 조회 API가 백엔드에 없습니다. 빈 배열을 반환합니다.');
-    return [];
+    try {
+      // 백엔드에서 전체 프로젝트 목록 조회
+      const backendResponse = await apiRequest<any[]>('/api/crowd', {
+        method: 'GET',
+      });
+
+      // 각 프로젝트를 프론트엔드 타입으로 변환
+      const projects = backendResponse.map((backendProject: any) => {
+        // Creator 정보 처리
+        let creator: UserResponse;
+        if (backendProject.creator) {
+          creator = {
+            id: backendProject.creator.id || backendProject.creatorId || 0,
+            email: backendProject.creator.email || null,
+            name: backendProject.creator.name || backendProject.creator.username || '',
+            nickname: backendProject.creator.nickname || '',
+            profileImageUrl: backendProject.creator.profileImageUrl || null,
+            phone: backendProject.creator.phone || backendProject.creator.phoneNumber || null,
+          };
+        } else if (backendProject.creatorId) {
+          creator = {
+            id: backendProject.creatorId,
+            email: null,
+            name: '',
+            nickname: `사용자 ${backendProject.creatorId}`,
+            profileImageUrl: null,
+            phone: null,
+          };
+        } else {
+          creator = {
+            id: 0,
+            email: null,
+            name: '',
+            nickname: '알 수 없음',
+            profileImageUrl: null,
+            phone: null,
+          };
+        }
+
+        // 이미지 처리
+        const thumbnailUrl = backendProject.thumbnailUrl || backendProject.thumbnail_url || null;
+        const imageUrl = backendProject.imageUrl || thumbnailUrl || null;
+        const imageUrls = backendProject.imageUrls || (imageUrl ? [imageUrl] : null);
+
+        // 날짜 필드 처리
+        const startAt = backendProject.startAt || backendProject.start_at || '';
+        const endAt = backendProject.endAt || backendProject.end_at || '';
+        const createdAt = backendProject.createdAt || backendProject.created_date || backendProject.createdDate || '';
+
+        return {
+          id: backendProject.id,
+          creator,
+          title: backendProject.title || '',
+          description: backendProject.description || '',
+          imageUrl,
+          imageUrls,
+          targetAmount: backendProject.targetAmount || backendProject.target_amount || 0,
+          currentAmount: backendProject.currentAmount || backendProject.current_amount || 0,
+          status: backendProject.status || 'DRAFT',
+          startAt,
+          endAt,
+          rewardTiers: (backendProject.rewardTiers || backendProject.reward_tiers || []).map((tier: any) => ({
+            id: tier.id || 0,
+            title: tier.title || '',
+            description: tier.description || '',
+            price: tier.price || 0,
+            limitQuantity: tier.limitQuantity !== undefined ? tier.limitQuantity : (tier.limit_quantity !== undefined ? tier.limit_quantity : null),
+            soldQuantity: tier.soldQuantity || tier.sold_quantity || 0,
+          })),
+          createdAt,
+          categoryPath: backendProject.categoryPath || backendProject.category_path || null,
+          tags: backendProject.tags || null,
+          summary: backendProject.summary || null,
+        } as ProjectResponse;
+      });
+
+      // 클라이언트 사이드 필터링 (백엔드에 필터링 파라미터가 없으므로)
+      let filteredProjects = projects;
+      
+      // 상태 필터링
+      if (params?.status) {
+        filteredProjects = filteredProjects.filter(project => project.status === params.status);
+      }
+
+      // 최신순 정렬 (createdAt 기준)
+      filteredProjects.sort((a, b) => {
+        const dateA = new Date(a.createdAt).getTime();
+        const dateB = new Date(b.createdAt).getTime();
+        return dateB - dateA; // 최신순
+      });
+
+      // 페이지네이션 적용
+      if (params?.page && params?.limit) {
+        const page = params.page;
+        const limit = params.limit;
+        const offset = (page - 1) * limit;
+        return filteredProjects.slice(offset, offset + limit);
+      }
+
+      // limit만 있는 경우
+      if (params?.limit) {
+        return filteredProjects.slice(0, params.limit);
+      }
+
+      return filteredProjects;
+    } catch (error) {
+      console.error('프로젝트 목록 조회 실패:', error);
+      throw error;
+    }
   },
 
   /**
@@ -1576,29 +1684,6 @@ export const authApi = {
     };
     
     const jsonBody = JSON.stringify(requestBody);
-    const loginUrl = `${API_BASE_URL}/api/users/login`;
-    
-    // JSON body 로그 출력 (확실히 출력되도록 - 여러 방법으로 출력)
-    console.group('🔵 로그인 요청 상세 정보');
-    console.log('📤 요청 URL:', loginUrl);
-    console.log('📤 요청 메서드:', 'POST');
-    console.log('📤 요청 헤더:', {
-      'Content-Type': 'application/json',
-    });
-    console.log('📤 요청 Body (JSON 문자열):', jsonBody);
-    console.log('📤 요청 Body (객체):', {
-      email: requestBody.email,
-      password: requestBody.password ? `***${requestBody.password.slice(-2)}` : '(없음)',
-    });
-    console.log('📤 Body 길이:', jsonBody.length, 'bytes');
-    console.log('📤 Body 타입:', typeof jsonBody);
-    console.log('📤 API_BASE_URL:', API_BASE_URL);
-    console.groupEnd();
-    
-    // 추가: alert로도 확인 (개발 중에만)
-    if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
-      console.warn('⚠️ JSON Body 확인:', jsonBody);
-    }
     
     try {
       const response = await fetch(`${API_BASE_URL}/api/users/login`, {
@@ -1608,12 +1693,6 @@ export const authApi = {
         },
         credentials: 'include', // refreshToken 쿠키 저장을 위해 필수
         body: jsonBody,
-      });
-      
-      console.log('응답 받음:', {
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok,
       });
 
       if (!response.ok) {
@@ -1671,15 +1750,17 @@ export const authApi = {
           phone: responseData.phoneNumber || responseData.phone || null,
         };
         tokenStorage.setUser(user);
+      } else {
+        // 로그인 응답에 사용자 정보가 없으면 null로 설정
+        // 사용자 정보는 나중에 필요할 때 /api/users/profile로 조회
+        user = null;
       }
-      // 백엔드에 /api/users/me가 없으므로 로그인 직후 사용자 정보 조회하지 않음
-      // 사용자 정보는 나중에 필요할 때 조회하거나, 다른 엔드포인트를 사용해야 함
       
       return {
         accessToken,
         refreshToken: '', // refreshToken은 쿠키에 저장되므로 빈 문자열
         user: user || {
-          // 임시 사용자 정보 (나중에 실제 사용자 정보로 교체 필요)
+          // 임시 사용자 정보 (사용자 정보 조회 실패 시)
           id: 0,
           email: null,
           name: '',
@@ -1865,21 +1946,36 @@ export const authApi = {
 
   /**
    * 현재 사용자 정보 조회 (토큰으로)
-   * GET /api/users/me
+   * GET /api/users/profile
    */
   getCurrentUser: async (): Promise<UserResponse> => {
     try {
-      const user = await apiRequest<UserResponse>('/api/users/me', {
+      // 백엔드 응답을 받아서 구조 확인
+      const backendResponse = await apiRequest<any>('/api/users/profile', {
         method: 'GET',
       });
+      
+      // 백엔드 응답 검증
+      if (!backendResponse) {
+        throw new Error('백엔드 응답이 비어있습니다');
+      }
+      
+      // 백엔드 응답을 프론트엔드 타입으로 변환
+      // 백엔드 필드명이 다를 수 있으므로 안전하게 변환
+      const user: UserResponse = {
+        id: backendResponse.id ?? backendResponse.userId ?? 0,
+        email: backendResponse.email ?? null,
+        name: backendResponse.name ?? backendResponse.username ?? '',
+        nickname: backendResponse.nickname ?? '',
+        profileImageUrl: backendResponse.profileImageUrl ?? backendResponse.profile_image_url ?? null,
+        phone: backendResponse.phone ?? backendResponse.phoneNumber ?? backendResponse.phone_number ?? null,
+      };
       
       // 사용자 정보를 localStorage에 저장
       tokenStorage.setUser(user);
       
       return user;
     } catch (error) {
-      console.error('사용자 정보 조회 실패:', error);
-      
       // 401 Unauthorized인 경우 토큰이 만료되었거나 유효하지 않음
       if (error instanceof Error && (error.message.includes('401') || error.message.includes('Unauthorized'))) {
         // 토큰 삭제
@@ -1890,7 +1986,6 @@ export const authApi = {
       // 네트워크 오류인 경우 저장된 사용자 정보 반환 (fallback)
       const savedUser = tokenStorage.getUser();
       if (savedUser) {
-        console.warn('백엔드에서 사용자 정보를 가져올 수 없어 저장된 정보를 사용합니다');
         return savedUser;
       }
       
