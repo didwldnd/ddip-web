@@ -608,8 +608,46 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 </CardContent>
               </Card>
 
+              {/* 자기 프로젝트일 때 버튼들 */}
+              {isProjectCreator(project, user) && (
+                <div className="space-y-2">
+                  {canEditProject(project, user) && (
+                    <Button
+                      size="lg"
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => router.push(`/project/${project.id}/edit`)}
+                    >
+                      <Edit className="mr-2 size-4" />
+                      프로젝트 수정
+                    </Button>
+                  )}
+                  {canCancelProject(project, user) && (
+                    <Button
+                      size="lg"
+                      variant="destructive"
+                      className="w-full"
+                      onClick={async () => {
+                        if (confirm("프로젝트를 취소하시겠습니까?")) {
+                          try {
+                            await projectApi.deleteProject(project.id)
+                            toast.success("프로젝트가 취소되었습니다")
+                            router.push("/projects")
+                          } catch (error) {
+                            toast.error("프로젝트 취소에 실패했습니다")
+                          }
+                        }
+                      }}
+                    >
+                      <X className="mr-2 size-4" />
+                      프로젝트 취소
+                    </Button>
+                  )}
+                </div>
+              )}
+
               {/* 후원하기 버튼 */}
-              {project.status === "OPEN" && (
+              {project.status === "OPEN" && !isProjectCreator(project, user) && (
                 <Dialog open={supportDialogOpen} onOpenChange={setSupportDialogOpen}>
                   <DialogTrigger asChild>
                     <Button size="lg" className="w-full" disabled={!isAuthenticated}>

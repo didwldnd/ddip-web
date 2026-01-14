@@ -214,30 +214,42 @@ export const projectApi = {
       // 백엔드 쿼리 기준: creator_id는 있지만 creator 객체는 없을 수 있음
       // thumbnail_url은 있지만 imageUrl/imageUrls는 없을 수 있음
       
-      // Creator 정보 처리 (백엔드에 creator 객체가 없을 수 있음)
-      // 백엔드 쿼리 기준: creator_id는 있지만 creator 객체는 조인하지 않음
+      // Creator 정보 처리
       let creator: UserResponse;
       if (backendResponse.creator) {
-        // 백엔드에 creator 객체가 있는 경우 (나중에 백엔드에서 추가될 수 있음)
+        // 백엔드에 creator 객체가 있는 경우
         creator = {
           id: backendResponse.creator.id || backendResponse.creatorId || 0,
           email: backendResponse.creator.email || null,
           name: backendResponse.creator.name || backendResponse.creator.username || '',
           nickname: backendResponse.creator.nickname || '',
-          profileImageUrl: backendResponse.creator.profileImageUrl || null,
-          phone: backendResponse.creator.phone || backendResponse.creator.phoneNumber || null,
+          profileImageUrl: backendResponse.creator.profileImageUrl || backendResponse.creator.profile_image_url || null,
+          phone: backendResponse.creator.phone || backendResponse.creator.phoneNumber || backendResponse.creator.phone_number || null,
         };
       } else if (backendResponse.creatorId) {
-        // 백엔드에 creatorId만 있는 경우 (현재 상황)
-        // 기본값으로 설정 - 나중에 백엔드에서 creator 정보를 포함시키면 자동으로 사용됨
-        creator = {
-          id: backendResponse.creatorId,
-          email: null,
-          name: '',
-          nickname: `사용자 ${backendResponse.creatorId}`, // 임시로 ID 표시
-          profileImageUrl: null,
-          phone: null,
-        };
+        // 백엔드에 creatorId만 있는 경우 - 사용자 정보 조회 시도
+        try {
+          // creatorId로 사용자 정보 조회 (백엔드에 해당 API가 있다면)
+          // 일단 기본값으로 설정하고, 나중에 백엔드에서 creator 정보를 포함시키면 자동으로 사용됨
+          creator = {
+            id: backendResponse.creatorId,
+            email: null,
+            name: '',
+            nickname: `사용자 ${backendResponse.creatorId}`,
+            profileImageUrl: null,
+            phone: null,
+          };
+        } catch (error) {
+          console.warn('생성자 정보 조회 실패:', error);
+          creator = {
+            id: backendResponse.creatorId,
+            email: null,
+            name: '',
+            nickname: `사용자 ${backendResponse.creatorId}`,
+            profileImageUrl: null,
+            phone: null,
+          };
+        }
       } else {
         // creatorId도 없는 경우 (에러 상황)
         creator = {
