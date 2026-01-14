@@ -21,6 +21,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
 
   // 초기 로드 시 저장된 사용자 정보 확인
   useEffect(() => {
@@ -30,6 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const savedUser = tokenStorage.getUser()
 
         if (token) {
+          setIsAuthenticated(true)
           // 토큰이 있으면 저장된 사용자 정보 사용
           if (savedUser) {
             setUser(savedUser)
@@ -52,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         } else {
           // 토큰이 없으면 로그아웃 상태
+          setIsAuthenticated(false)
           setUser(null)
         }
       } catch (error) {
@@ -60,7 +63,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const token = tokenStorage.getAccessToken()
         if (!token) {
           tokenStorage.clearAll()
+          setIsAuthenticated(false)
           setUser(null)
+        } else {
+          setIsAuthenticated(true)
         }
       } finally {
         setIsLoading(false)
@@ -78,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.refreshToken) {
         tokenStorage.setRefreshToken(response.refreshToken)
       }
+      setIsAuthenticated(true)
       
       // 사용자 정보가 있으면 저장
       if (response.user && response.user.id !== 0) {
@@ -110,6 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.refreshToken) {
         tokenStorage.setRefreshToken(response.refreshToken)
       }
+      setIsAuthenticated(true)
       
       // 사용자 정보가 있으면 저장, 없어도 토큰만 있으면 회원가입 성공
       if (response.user && response.user.id !== 0) {
@@ -131,6 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error("로그아웃 실패:", error)
     } finally {
       tokenStorage.clearAll()
+      setIsAuthenticated(false)
       setUser(null)
     }
   }
@@ -140,6 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const currentUser = await authApi.getCurrentUser()
       setUser(currentUser)
       tokenStorage.setUser(currentUser)
+      setIsAuthenticated(true)
     } catch (error) {
       console.error("사용자 정보 갱신 실패:", error)
       // getCurrentUser 실패해도 토큰이 있으면 로그아웃하지 않음
@@ -148,7 +158,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!token) {
         // 토큰이 없으면 로그아웃 처리
         tokenStorage.clearAll()
+        setIsAuthenticated(false)
         setUser(null)
+      } else {
+        setIsAuthenticated(true)
       }
     }
   }
@@ -171,8 +184,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value: AuthContextType = {
     user,
     isLoading,
-    // 토큰이 있으면 인증된 것으로 처리 (사용자 정보가 없어도)
-    isAuthenticated: !!tokenStorage.getAccessToken(),
+    isAuthenticated,
     login,
     register,
     logout,
