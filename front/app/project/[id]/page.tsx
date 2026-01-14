@@ -194,30 +194,37 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       return
     }
 
+    // 리워드 티어의 가격과 입력한 금액이 다를 수 있으므로 확인
+    if (amount < selectedTier.price) {
+      toast.error(`최소 ${selectedTier.price.toLocaleString()}원 이상 후원해주세요`)
+      return
+    }
+
     try {
       setIsSupporting(true)
-      await projectApi.supportProject({
-        projectId: project.id,
+      // 새로운 Pledge API 사용
+      await projectApi.createPledge(project.id, {
         rewardTierId: rewardTierId,
         amount: amount,
       })
       
-      toast.success("후원이 완료되었습니다!")
+      toast.success("리워드 구매가 완료되었습니다!")
       setSupportDialogOpen(false)
       setSupportAmount("")
       setSelectedRewardTier(null)
       
-      // 후원 후 상태 체크 (종료 시간이 지났거나 목표 달성했을 수 있음)
-      const finalProject = await projectApi.checkAndUpdateProjectStatus(project.id)
-      const projectToUse = finalProject || await projectApi.getProject(project.id)
-      setProject(projectToUse)
+      // 후원 후 프로젝트 정보 새로고침
+      const updatedProject = await projectApi.getProject(project.id)
+      setProject(updatedProject)
       
       // 상태 변경 알림
-      if (projectToUse.status === 'SUCCESS' && project.status === 'OPEN') {
+      if (updatedProject.status === 'SUCCESS' && project.status === 'OPEN') {
         toast.success("축하합니다! 프로젝트가 목표 금액을 달성했습니다!")
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "후원에 실패했습니다")
+      const errorMessage = error instanceof Error ? error.message : "리워드 구매에 실패했습니다"
+      toast.error(errorMessage)
+      console.error("리워드 구매 실패:", error)
     } finally {
       setIsSupporting(false)
     }
@@ -504,6 +511,24 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                       remaining={reward.limitQuantity ? reward.limitQuantity - reward.soldQuantity : undefined}
                       backers={reward.soldQuantity}
                       featured={false}
+                      onSelect={() => {
+                        // 리워드 선택 시 다이얼로그 열고 해당 리워드 선택
+                        if (!isAuthenticated) {
+                          toast.error("로그인이 필요합니다")
+                          return
+                        }
+                        if (isProjectCreator(project, user)) {
+                          toast.error("자신의 프로젝트에는 후원할 수 없습니다")
+                          return
+                        }
+                        if (project.status !== "OPEN") {
+                          toast.error("후원할 수 없는 프로젝트입니다")
+                          return
+                        }
+                        setSelectedRewardTier(reward.id)
+                        setSupportAmount(reward.price.toLocaleString())
+                        setSupportDialogOpen(true)
+                      }}
                     />
                   ))}
                 </div>
@@ -646,19 +671,29 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               )}
 
-              {/* 후원하기 버튼 */}
+              {/* 리워드 구매 버튼 */}
               {project.status === "OPEN" && !isProjectCreator(project, user) && (
-                <Dialog open={supportDialogOpen} onOpenChange={setSupportDialogOpen}>
+                <Dialog 
+                  open={supportDialogOpen} 
+                  onOpenChange={(open) => {
+                    setSupportDialogOpen(open)
+                    // 다이얼로그가 닫힐 때 상태 초기화
+                    if (!open) {
+                      setSelectedRewardTier(null)
+                      setSupportAmount("")
+                    }
+                  }}
+                >
                   <DialogTrigger asChild>
                     <Button size="lg" className="w-full" disabled={!isAuthenticated}>
-                      {isAuthenticated ? "후원하기" : "로그인 후 후원하기"}
+                      {isAuthenticated ? "리워드 구매하기" : "로그인 후 구매하기"}
                     </Button>
                   </DialogTrigger>
                   <DialogContent className="max-w-md">
                     <DialogHeader>
-                      <DialogTitle>프로젝트 후원하기</DialogTitle>
+                      <DialogTitle>리워드 구매하기</DialogTitle>
                       <DialogDescription>
-                        리워드 티어를 선택하고 후원 금액을 입력해주세요
+                        리워드 티어를 선택하고 구매 금액을 입력해주세요
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
@@ -670,7 +705,9 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                             <button
                               key={tier.id}
                               type="button"
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
                                 setSelectedRewardTier(tier.id)
                                 setSupportAmount(tier.price.toLocaleString())
                               }}
@@ -724,7 +761,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                         )}
                       </div>
 
-                      {/* 후원 버튼 */}
+                      {/* 구매 버튼 */}
                       <Button
                         onClick={handleSupport}
                         disabled={!supportAmount || isSupporting || (project.rewardTiers.length === 0)}
@@ -733,10 +770,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                         {isSupporting ? (
                           <>
                             <Loader2 className="mr-2 size-4 animate-spin" />
-                            후원 중...
+                            구매 중...
                           </>
                         ) : (
-                          "후원하기"
+                          "리워드 구매하기"
                         )}
                       </Button>
                     </div>

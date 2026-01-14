@@ -11,6 +11,9 @@ import {
   BidResponse,
   OAuthProvider,
   OAuthCallbackRequest,
+  PledgeCreateRequest,
+  PledgeResponse,
+  ProfileUpdateRequest,
 } from '@/src/types/api';
 import { tokenStorage } from '@/src/lib/auth';
 
@@ -383,10 +386,126 @@ export const projectApi = {
   },
 
   /**
-   * 프로젝트 후원하기
+   * 프로젝트 후원하기 (하위 호환성 유지)
+   * @deprecated createPledge 사용 권장
    */
   supportProject: async (data: SupportRequest): Promise<SupportResponse> => {
-    throw new Error('프로젝트 후원 API가 아직 구현되지 않았습니다');
+    // 새로운 API로 변환
+    const pledgeResponse = await projectApi.createPledge(data.projectId, {
+      rewardTierId: data.rewardTierId,
+      amount: data.amount,
+    });
+    
+    return {
+      id: pledgeResponse.id,
+      projectId: pledgeResponse.projectId,
+      projectTitle: pledgeResponse.projectTitle || '',
+      rewardTierId: pledgeResponse.rewardTierId,
+      rewardTierTitle: pledgeResponse.rewardTierTitle || '',
+      amount: pledgeResponse.amount,
+      supporter: pledgeResponse.supporter || {
+        id: 0,
+        email: null,
+        name: '',
+        nickname: '',
+        profileImageUrl: null,
+        phone: null,
+      },
+      createdAt: pledgeResponse.createdAt,
+    };
+  },
+
+  /**
+   * 리워드 구매 (Pledge 생성)
+   * POST /api/crowd/pledges/{projectId}
+   */
+  createPledge: async (
+    projectId: number,
+    data: { rewardTierId: number; amount: number }
+  ): Promise<PledgeResponse> => {
+    try {
+      const backendResponse = await apiRequest<any>(`/api/crowd/pledges/${projectId}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          rewardTierId: data.rewardTierId,
+          amount: data.amount,
+        }),
+      });
+
+      // 백엔드 응답을 프론트엔드 타입으로 변환
+      const pledge: PledgeResponse = {
+        id: backendResponse.id || 0,
+        projectId: backendResponse.projectId || projectId,
+        projectTitle: backendResponse.projectTitle || null,
+        rewardTierId: backendResponse.rewardTierId || data.rewardTierId,
+        rewardTierTitle: backendResponse.rewardTierTitle || null,
+        amount: backendResponse.amount || data.amount,
+        supporter: backendResponse.supporter ? {
+          id: backendResponse.supporter.id || 0,
+          email: backendResponse.supporter.email || null,
+          name: backendResponse.supporter.name || backendResponse.supporter.username || '',
+          nickname: backendResponse.supporter.nickname || '',
+          profileImageUrl: backendResponse.supporter.profileImageUrl || null,
+          phone: backendResponse.supporter.phone || backendResponse.supporter.phoneNumber || null,
+        } : undefined,
+        createdAt: backendResponse.createdAt || new Date().toISOString(),
+        status: backendResponse.status || null,
+      };
+
+      return pledge;
+    } catch (error) {
+      console.error('리워드 구매 실패:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 본인의 리워드 전체 조회
+   * GET /api/crowd/pledges
+   */
+  getMyPledges: async (): Promise<PledgeResponse[]> => {
+    try {
+      const backendResponse = await apiRequest<any[]>('/api/crowd/pledges', {
+        method: 'GET',
+      });
+
+      return backendResponse.map((pledge: any) => ({
+        id: pledge.id || 0,
+        projectId: pledge.projectId || 0,
+        projectTitle: pledge.projectTitle || null,
+        rewardTierId: pledge.rewardTierId || 0,
+        rewardTierTitle: pledge.rewardTierTitle || null,
+        amount: pledge.amount || 0,
+        supporter: pledge.supporter ? {
+          id: pledge.supporter.id || 0,
+          email: pledge.supporter.email || null,
+          name: pledge.supporter.name || pledge.supporter.username || '',
+          nickname: pledge.supporter.nickname || '',
+          profileImageUrl: pledge.supporter.profileImageUrl || null,
+          phone: pledge.supporter.phone || pledge.supporter.phoneNumber || null,
+        } : undefined,
+        createdAt: pledge.createdAt || new Date().toISOString(),
+        status: pledge.status || null,
+      }));
+    } catch (error) {
+      console.error('리워드 조회 실패:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 리워드 취소
+   * PATCH /api/crowd/pledges/{pledgeId}/cancel
+   */
+  cancelPledge: async (pledgeId: number): Promise<void> => {
+    try {
+      await apiRequest(`/api/crowd/pledges/${pledgeId}/cancel`, {
+        method: 'PATCH',
+      });
+    } catch (error) {
+      console.error('리워드 취소 실패:', error);
+      throw error;
+    }
   },
 
   getMySupports: async (userId?: number): Promise<SupportResponse[]> => {
@@ -996,6 +1115,60 @@ export const authApi = {
     } catch (error) {
       console.error('OAuth 콜백 처리 실패:', error);
       throw error instanceof Error ? error : new Error('OAuth 인증에 실패했습니다');
+    }
+  },
+
+  /**
+   * 프로필 업데이트
+   * PATCH /api/users/update-profile
+   * 백엔드 응답: {"newAccessToken": "..."}
+   */
+  updateProfile: async (data: ProfileUpdateRequest): Promise<UserResponse> => {
+    try {
+      // 백엔드 DTO에 맞게 필드명 변환
+      const requestData: any = {
+        username: data.username || data.name,  // username 우선, 없으면 name 사용
+        nickname: data.nickname,
+        phoneNumber: data.phoneNumber || data.phone,  // phoneNumber 우선, 없으면 phone 사용
+        profileImageUrl: data.profileImageUrl,
+      };
+      
+      const backendResponse = await apiRequest<any>('/api/users/update-profile', {
+        method: 'PATCH',
+        body: JSON.stringify(requestData),
+      });
+
+      // 백엔드 응답에서 newAccessToken 추출 및 저장
+      if (backendResponse.newAccessToken) {
+        tokenStorage.setAccessToken(backendResponse.newAccessToken);
+        console.log('새로운 accessToken이 저장되었습니다');
+      }
+
+      // 사용자 정보는 별도로 조회 (백엔드가 newAccessToken만 반환하는 경우)
+      // 또는 응답에 사용자 정보가 포함되어 있다면 사용
+      let user: UserResponse;
+      
+      if (backendResponse.id || backendResponse.email) {
+        // 응답에 사용자 정보가 포함된 경우
+        user = {
+          id: backendResponse.id ?? backendResponse.userId ?? 0,
+          email: backendResponse.email ?? null,
+          name: backendResponse.name ?? backendResponse.username ?? '',
+          nickname: backendResponse.nickname ?? '',
+          profileImageUrl: backendResponse.profileImageUrl ?? backendResponse.profile_image_url ?? null,
+          phone: backendResponse.phone ?? backendResponse.phoneNumber ?? backendResponse.phone_number ?? null,
+          roleLevel: backendResponse.roleLevel ?? backendResponse.role_level ?? 0,
+        };
+      } else {
+        // 응답에 사용자 정보가 없는 경우, 새 토큰으로 사용자 정보 조회
+        user = await authApi.getCurrentUser();
+      }
+
+      tokenStorage.setUser(user);
+      return user;
+    } catch (error) {
+      console.error('프로필 업데이트 실패:', error);
+      throw error;
     }
   },
 };

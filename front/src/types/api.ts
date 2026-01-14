@@ -44,6 +44,16 @@ export interface AuthResponse {
   user: UserResponse;
 }
 
+// 프로필 업데이트 관련 타입
+export interface ProfileUpdateRequest {
+  username?: string;  // 백엔드 DTO: username (이름)
+  nickname?: string;  // 백엔드 DTO: nickname (닉네임)
+  phoneNumber?: string;  // 백엔드 DTO: phoneNumber (전화번호)
+  phone?: string;  // 하위 호환성을 위해 유지
+  name?: string;  // 하위 호환성을 위해 유지
+  profileImageUrl?: string | null;
+}
+
 // OAuth 관련 타입
 export type OAuthProvider = 'google' | 'kakao' | 'naver'
 
@@ -102,7 +112,7 @@ export interface AuctionResponse {
   summary?: string | null;
 }
 
-// 후원 관련 타입
+// 후원 관련 타입 (하위 호환성 유지)
 export interface SupportRequest {
   projectId: number;
   rewardTierId: number;
@@ -118,6 +128,24 @@ export interface SupportResponse {
   amount: number;
   supporter: UserResponse;
   createdAt: string;
+}
+
+// 리워드 구매(Pledge) 관련 타입
+export interface PledgeCreateRequest {
+  rewardTierId: number;
+  amount: number;
+}
+
+export interface PledgeResponse {
+  id: number;
+  projectId: number;
+  projectTitle?: string;
+  rewardTierId: number;
+  rewardTierTitle?: string;
+  amount: number;
+  supporter?: UserResponse;
+  createdAt: string;
+  status?: string;
 }
 
 // 입찰 관련 타입
