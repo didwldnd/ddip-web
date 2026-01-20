@@ -5,8 +5,9 @@
 2. [프로젝트(크라우드펀딩) 기능](#프로젝트크라우드펀딩-기능)
 3. [경매 기능](#경매-기능)
 4. [사용자 프로필 및 마이페이지](#사용자-프로필-및-마이페이지)
-5. [API 엔드포인트 정리](#api-엔드포인트-정리)
-6. [타입 정의](#타입-정의)
+5. [배송지 관리](#배송지-관리)
+6. [API 엔드포인트 정리](#api-엔드포인트-정리)
+7. [타입 정의](#타입-정의)
 
 ---
 
@@ -221,6 +222,75 @@
 
 ---
 
+## 배송지 관리
+
+### 1. 마이페이지 배송지 관리
+- **페이지**: `/profile` (배송지 관리 탭)
+- **기능**:
+  - 배송지 목록 조회 및 표시
+  - 배송지 추가 (수령인 이름, 전화번호, 우편번호, 주소, 상세주소)
+  - 배송지 수정
+  - 배송지 삭제
+  - 기본 배송지 설정
+  - 기본 배송지 표시 (배지)
+
+**주요 특징**:
+- 배송지가 없을 때 안내 메시지 표시
+- 기본 배송지 자동 선택 및 표시
+- 페이지 새로고침 시에도 배송지 목록 유지
+- UI 개선: "기본 배송지로 설정", "배송지 수정", "배송지 삭제" 텍스트 버튼
+
+### 2. 리워드 구매 시 배송지 선택
+- **페이지**: `/project/[id]` (리워드 구매 다이얼로그)
+- **기능**:
+  - 기본 배송지 자동 선택
+  - 배송지 드롭다운으로 선택 가능
+  - 배송지가 없을 경우 다이얼로그에서 바로 추가 가능
+  - 배송지 추가 후 자동 선택 및 구매 진행
+
+**사용자 플로우**:
+1. 마이페이지에서 배송지 미리 등록/관리
+2. 리워드 구매 시:
+   - 배송지 있음 → 기본 배송지 자동 선택 (변경 가능)
+   - 배송지 없음 → 다이얼로그에서 바로 추가 가능
+3. 배송지 추가 후 구매 진행
+
+**타입 정의**:
+- `AddressCreateRequest`: 배송지 생성 요청
+  - `label?`: 배송지 라벨 (선택사항, 최대 30자)
+  - `recipientName`: 수령인 이름 (필수, 최대 100자)
+  - `phone`: 전화번호 (필수, 최대 20자)
+  - `zipCode`: 우편번호 (필수, 최대 10자)
+  - `address`: 주소 (필수, 최대 255자, 백엔드: address1)
+  - `detailAddress`: 상세주소 (필수, 최대 255자, 백엔드: address2)
+  - `setAsDefault?`: 기본 배송지로 설정 여부
+
+- `AddressUpdateRequest`: 배송지 수정 요청 (모든 필드 선택사항)
+
+- `AddressResponse`: 배송지 응답
+  - `id`: 배송지 ID
+  - `recipientName`: 수령인 이름
+  - `phone`: 전화번호
+  - `zipCode`: 우편번호
+  - `address`: 주소
+  - `detailAddress`: 상세주소
+  - `isDefault`: 기본 배송지 여부
+
+**API 함수** (`addressApi`):
+- `getDefaultAddress()`: 기본 배송지 조회 (204면 null 반환)
+- `getMyAddresses()`: 내 배송지 목록 조회
+- `createAddress(data)`: 배송지 생성
+- `getAddress(addressId)`: 배송지 상세 조회
+- `updateAddress(addressId, data)`: 배송지 수정
+- `deleteAddress(addressId)`: 배송지 삭제
+- `setDefaultAddress(addressId)`: 기본 배송지 설정
+
+**백엔드 DTO 매핑**:
+- 프론트엔드 `address` → 백엔드 `address1`
+- 프론트엔드 `detailAddress` → 백엔드 `address2`
+
+---
+
 ## API 엔드포인트 정리
 
 ### 인증 관련
@@ -241,6 +311,17 @@ PUT    /api/crowd/{id}          - 프로젝트 수정 (비활성화)
 DELETE /api/crowd/{id}          - 프로젝트 삭제
 POST   /api/crowd/{projectId}/pledges - 후원하기
 GET    /api/crowd/pledges      - 내 후원 내역 조회
+```
+
+### 배송지 관련
+```
+GET    /api/addresses/default          - 기본 배송지 조회 (204면 없음)
+GET    /api/addresses                  - 내 배송지 목록 조회
+POST   /api/addresses                  - 배송지 생성 (201 Created + ID)
+GET    /api/addresses/{addressId}      - 배송지 상세 조회
+PATCH  /api/addresses/{addressId}      - 배송지 수정
+DELETE /api/addresses/{addressId}      - 배송지 삭제
+PUT    /api/addresses/{addressId}/default - 기본 배송지 설정
 ```
 
 ### 경매 관련
@@ -304,6 +385,40 @@ interface AuthResponse {
   accessToken: string;
   refreshToken?: string;
   user: UserResponse;
+}
+```
+
+### 배송지 관련 타입
+```typescript
+// 배송지 생성 요청
+interface AddressCreateRequest {
+  label?: string; // 배송지 라벨 (선택사항, 최대 30자)
+  recipientName: string; // 수령인 이름 (필수, 최대 100자)
+  phone: string; // 전화번호 (필수, 최대 20자)
+  zipCode: string; // 우편번호 (필수, 최대 10자)
+  address: string; // 주소 (필수, 최대 255자, 백엔드: address1)
+  detailAddress: string; // 상세주소 (필수, 최대 255자, 백엔드: address2)
+  setAsDefault?: boolean; // 기본 배송지로 설정 여부
+}
+
+// 배송지 수정 요청
+interface AddressUpdateRequest {
+  recipientName?: string;
+  phone?: string;
+  zipCode?: string;
+  address?: string;
+  detailAddress?: string;
+}
+
+// 배송지 응답
+interface AddressResponse {
+  id: number;
+  recipientName: string;
+  phone: string;
+  zipCode: string;
+  address: string;
+  detailAddress: string;
+  isDefault: boolean; // 기본 배송지 여부
 }
 ```
 
@@ -489,6 +604,16 @@ interface ProfileUpdateRequest {
 - 프로필 상세: 다른 사용자 정보 조회
 - 백엔드 DTO 구조와 일치
 
+### 6. 배송지 관리 기능 구현
+- 마이페이지 배송지 관리 탭 추가
+- 배송지 CRUD 기능 (생성, 조회, 수정, 삭제)
+- 기본 배송지 설정 및 표시
+- 리워드 구매 시 배송지 선택 기능
+- 배송지 없을 경우 구매 다이얼로그에서 바로 추가 가능
+- 백엔드 DTO 필드명 매핑 (address1/address2)
+- 페이지 새로고침 시 배송지 목록 유지
+- UI 개선: 명확한 버튼 텍스트 및 수령인 표시
+
 ---
 
 ## 파일 구조
@@ -531,5 +656,5 @@ front/
 
 ---
 
-**최종 업데이트**: 2024년
+**최종 업데이트**: 2026년
 **문서 버전**: 1.0
