@@ -40,19 +40,10 @@ function OAuthCallbackContent() {
         // 토큰 저장
         tokenStorage.setAccessToken(accessToken)
 
-        // OAuth에서 사용자 정보가 함께 전달된 경우 사용
-        if (userId && (email || name || nickname)) {
-          const oauthUser = {
-            id: parseInt(userId, 10),
-            email: email || null,
-            name: name || "",
-            nickname: nickname || "",
-            profileImageUrl: profileImageUrl || null,
-            phone: null,
-            roleLevel: 0,
-          }
-          
-          tokenStorage.setUser(oauthUser)
+        // 백엔드에서 실제 사용자 정보 조회 (쿼리 파라미터 정보는 임시로만 사용)
+        try {
+          const currentUser = await authApi.getCurrentUser()
+          tokenStorage.setUser(currentUser)
           
           // 사용자 정보 갱신 (AuthContext 업데이트)
           await refreshUser()
@@ -60,8 +51,8 @@ function OAuthCallbackContent() {
           // 상태 업데이트를 위한 짧은 대기
           await new Promise(resolve => setTimeout(resolve, 200))
 
-          // 프로필 완성 여부 확인
-          if (!oauthUser.nickname || !oauthUser.phone || !oauthUser.name) {
+          // 프로필 완성 여부 확인 (이름, 닉네임, 전화번호 모두 있어야 함)
+          if (!currentUser.name || !currentUser.nickname || !currentUser.phone) {
             // 프로필이 완성되지 않았으면 프로필 완성 페이지로 리다이렉트
             toast.info("추가 정보를 입력해주세요")
             router.push("/auth/profile/complete")
@@ -69,38 +60,16 @@ function OAuthCallbackContent() {
             toast.success("로그인 성공!")
             router.push("/")
           }
-        } else {
-          // OAuth에서 사용자 정보가 전달되지 않은 경우 백엔드 API로 조회
+        } catch (userError) {
+          console.error("사용자 정보 조회 실패:", userError)
+          // 토큰은 저장되었지만 사용자 정보 조회 실패 시에도 AuthContext 업데이트 시도
           try {
-            const currentUser = await authApi.getCurrentUser()
-            tokenStorage.setUser(currentUser)
-            
-            // 사용자 정보 갱신 (AuthContext 업데이트)
             await refreshUser()
-            
-            // 상태 업데이트를 위한 짧은 대기
-            await new Promise(resolve => setTimeout(resolve, 200))
-
-            // 프로필 완성 여부 확인
-            if (!currentUser.nickname || !currentUser.phone || !currentUser.name) {
-              // 프로필이 완성되지 않았으면 프로필 완성 페이지로 리다이렉트
-              toast.info("추가 정보를 입력해주세요")
-              router.push("/auth/profile/complete")
-            } else {
-              toast.success("로그인 성공!")
-              router.push("/")
-            }
-          } catch (userError) {
-            console.error("사용자 정보 조회 실패:", userError)
-            // 토큰은 저장되었지만 사용자 정보 조회 실패 시에도 AuthContext 업데이트 시도
-            try {
-              await refreshUser()
-            } catch (refreshError) {
-              console.error("사용자 정보 갱신 실패:", refreshError)
-            }
-            toast.info("추가 정보를 입력해주세요")
-            router.push("/auth/profile/complete")
+          } catch (refreshError) {
+            console.error("사용자 정보 갱신 실패:", refreshError)
           }
+          toast.info("추가 정보를 입력해주세요")
+          router.push("/auth/profile/complete")
         }
 
         router.refresh()

@@ -318,12 +318,20 @@ export const projectApi = {
   ): Promise<ProjectResponse> => {
     try {
       // 백엔드에 전송할 데이터 형식 변환
+      // thumbnailImageUrl은 필수 필드이므로 첫 번째 이미지 URL을 사용
+      const thumbnailImageUrl = data.imageUrl || (data.imageUrls && data.imageUrls.length > 0 ? data.imageUrls[0] : null);
+      
+      if (!thumbnailImageUrl) {
+        throw new Error('프로젝트 이미지(썸네일)를 업로드해주세요');
+      }
+
       const requestData = {
         title: data.title,
         description: data.description,
         targetAmount: data.targetAmount,
         startAt: data.startAt,
         endAt: data.endAt,
+        thumbnailImageUrl: thumbnailImageUrl,
         rewardTiers: data.rewardTiers.map(tier => ({
           title: tier.title,
           description: tier.description,

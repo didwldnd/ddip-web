@@ -13,6 +13,7 @@ import { AlertCircle, Loader2 } from "lucide-react"
 import { useAuth } from "@/src/contexts/auth-context"
 import { toast } from "sonner"
 import { Separator } from "@/src/components/ui/separator"
+import { BankType } from "@/src/types/api"
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -69,7 +70,7 @@ export default function RegisterPage() {
         phoneNumber: formData.phoneNumber,
         account: formData.account || null,
         accountHolder: formData.accountHolder || null,
-        bankType: formData.bankType || null,
+        bankType: formData.bankType && formData.bankType !== '' ? (formData.bankType as BankType) : undefined,
       })
       toast.success("회원가입 성공!")
       router.push("/")

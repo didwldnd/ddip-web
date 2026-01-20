@@ -57,6 +57,13 @@ export default function CreateProjectPage() {
     try {
       setIsSubmitting(true)
 
+      // 이미지 파일 필수 체크
+      if (imageFiles.length === 0) {
+        toast.error("프로젝트 이미지를 최소 1개 이상 업로드해주세요")
+        setIsSubmitting(false)
+        return
+      }
+
       // 이미지 파일들을 base64로 변환 (localStorage 저장용)
       let imageUrls: string[] | null = null
       if (imageFiles.length > 0) {
