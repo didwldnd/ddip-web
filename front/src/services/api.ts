@@ -1,14 +1,22 @@
 import {
   UserResponse,
+  UserPageResponse,
+  UserProfileResponse,
   ProjectResponse,
   AuctionResponse,
+  AuctionSummary,
+  AuctionCreateRequest,
+  AuctionStatus,
   RewardTierResponse,
   LoginRequest,
   RegisterRequest,
   AuthResponse,
   SupportRequest,
   SupportResponse,
+  BidRequest,
   BidResponse,
+  BidSummary,
+  MyBidsSummary,
   OAuthProvider,
   OAuthCallbackRequest,
   PledgeCreateRequest,
@@ -587,116 +595,488 @@ export const projectApi = {
 export const auctionApi = {
   /**
    * 경매 목록 조회
-   * TODO: 백엔드 API 연동 필요
+   * GET /api/auctions
    */
   getAuctions: async (params?: {
-    status?: AuctionResponse['status'];
+    status?: AuctionStatus;
     page?: number;
     limit?: number;
-  }): Promise<AuctionResponse[]> => {
-    return [];
+  }): Promise<AuctionSummary[]> => {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.status) queryParams.append('status', params.status);
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
+
+      const endpoint = `/api/auctions${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+      const backendResponse = await apiRequest<AuctionSummary[]>(endpoint, {
+        method: 'GET',
+      });
+
+      return backendResponse.map((auction: any) => ({
+        id: auction.id || 0,
+        title: auction.title || '',
+        thumbnailImageUrl: auction.thumbnailImageUrl || auction.thumbnail_url || null,
+        startPrice: auction.startPrice || auction.start_price || 0,
+        currentPrice: auction.currentPrice || auction.current_price || 0,
+        bidStep: auction.bidStep || auction.bid_step || 0,
+        status: auction.status || 'SCHEDULED',
+        startAt: auction.startAt || auction.start_at || '',
+        endAt: auction.endAt || auction.end_at || '',
+        bidCount: auction.bidCount || auction.bid_count || 0,
+        categoryPath: auction.categoryPath || auction.category_path || null,
+        summary: auction.summary || null,
+      }));
+    } catch (error) {
+      console.error('경매 목록 조회 실패:', error);
+      throw error;
+    }
   },
 
   /**
    * 경매 상세 조회
-   * TODO: 백엔드 API 연동 필요
+   * GET /api/auctions/{id}
    */
   getAuction: async (id: number): Promise<AuctionResponse> => {
-    throw new Error('경매 상세 조회 API가 아직 구현되지 않았습니다');
+    try {
+      const backendResponse = await apiRequest<any>(`/api/auctions/${id}`, {
+        method: 'GET',
+      });
+
+      // 백엔드 응답을 프론트엔드 타입으로 변환
+      const thumbnailUrl = backendResponse.thumbnailImageUrl || backendResponse.thumbnail_url || null;
+      const imageUrl = backendResponse.imageUrl || thumbnailUrl || null;
+      const imageUrls = backendResponse.imageUrls || (imageUrl ? [imageUrl] : null);
+
+      return {
+        id: backendResponse.id || 0,
+        seller: backendResponse.seller ? {
+          id: backendResponse.seller.id || 0,
+          email: backendResponse.seller.email || null,
+          name: backendResponse.seller.name || backendResponse.seller.username || '',
+          nickname: backendResponse.seller.nickname || '',
+          profileImageUrl: backendResponse.seller.profileImageUrl || backendResponse.seller.profile_image_url || null,
+          phone: backendResponse.seller.phone || backendResponse.seller.phoneNumber || null,
+        } : {
+          id: 0,
+          email: null,
+          name: '',
+          nickname: '',
+          profileImageUrl: null,
+          phone: null,
+        },
+        title: backendResponse.title || '',
+        description: backendResponse.description || '',
+        thumbnailImageUrl: thumbnailUrl,
+        imageUrl,
+        imageUrls,
+        startPrice: backendResponse.startPrice || backendResponse.start_price || 0,
+        currentPrice: backendResponse.currentPrice || backendResponse.current_price || 0,
+        bidStep: backendResponse.bidStep || backendResponse.bid_step || 0,
+        buyoutPrice: backendResponse.buyoutPrice || backendResponse.buyout_price || null,
+        status: backendResponse.status || 'SCHEDULED',
+        startAt: backendResponse.startAt || backendResponse.start_at || '',
+        endAt: backendResponse.endAt || backendResponse.end_at || '',
+        winner: backendResponse.winner ? {
+          id: backendResponse.winner.id || 0,
+          email: backendResponse.winner.email || null,
+          name: backendResponse.winner.name || backendResponse.winner.username || '',
+          nickname: backendResponse.winner.nickname || '',
+          profileImageUrl: backendResponse.winner.profileImageUrl || backendResponse.winner.profile_image_url || null,
+          phone: backendResponse.winner.phone || backendResponse.winner.phoneNumber || null,
+        } : null,
+        categoryPath: backendResponse.categoryPath || backendResponse.category_path || null,
+        tags: backendResponse.tags || null,
+        summary: backendResponse.summary || null,
+        bids: backendResponse.bids ? backendResponse.bids.map((bid: any) => ({
+          id: bid.id || 0,
+          bidder: bid.bidder ? {
+            id: bid.bidder.id || 0,
+            email: bid.bidder.email || null,
+            name: bid.bidder.name || bid.bidder.username || '',
+            nickname: bid.bidder.nickname || '',
+            profileImageUrl: bid.bidder.profileImageUrl || bid.bidder.profile_image_url || null,
+            phone: bid.bidder.phone || bid.bidder.phoneNumber || null,
+          } : {
+            id: 0,
+            email: null,
+            name: '',
+            nickname: '',
+            profileImageUrl: null,
+            phone: null,
+          },
+          bidderNickname: bid.bidderNickname || bid.bidder_nickname || bid.bidder?.nickname || '',
+          bidPrice: bid.bidPrice || bid.bid_price || 0,
+          bidAt: bid.bidAt || bid.bid_at || bid.createdAt || '',
+        })) : [],
+        createdAt: backendResponse.createdAt || backendResponse.created_at || '',
+        updatedAt: backendResponse.updatedAt || backendResponse.updated_at || '',
+      };
+    } catch (error) {
+      console.error('경매 상세 조회 실패:', error);
+      throw error;
+    }
   },
 
   /**
    * 경매 생성
-   * TODO: 백엔드 API 연동 필요
+   * POST /api/auctions
    */
-  createAuction: async (
-    data: Omit<AuctionResponse, 'id' | 'seller' | 'winner'>
-  ): Promise<AuctionResponse> => {
-    throw new Error('경매 생성 API가 아직 구현되지 않았습니다');
+  createAuction: async (data: AuctionCreateRequest): Promise<AuctionResponse> => {
+    try {
+      const requestData = {
+        title: data.title,
+        description: data.description,
+        startPrice: data.startPrice,
+        bidStep: data.bidStep,
+        endAt: data.endAt,
+        thumbnailImageUrl: data.thumbnailImageUrl || null,
+        categoryPath: data.categoryPath || null,
+        tags: data.tags || null,
+        summary: data.summary || null,
+      };
+
+      console.log('경매 생성 요청:', requestData);
+
+      const auctionId = await apiRequest<number>('/api/auctions', {
+        method: 'POST',
+        body: JSON.stringify(requestData),
+      });
+
+      console.log('경매 생성 성공, ID:', auctionId);
+
+      // 생성된 경매 ID로 상세 정보 조회
+      const createdAuction = await auctionApi.getAuction(auctionId);
+      
+      return createdAuction;
+    } catch (error) {
+      console.error('경매 생성 실패:', error);
+      throw error;
+    }
   },
 
   /**
    * 경매 수정
-   * TODO: 백엔드 API 연동 필요
+   * PUT /api/auctions/{id}
    */
   updateAuction: async (
     id: number,
-    data: Partial<AuctionResponse>
+    data: Partial<AuctionCreateRequest>
   ): Promise<AuctionResponse> => {
-    throw new Error('경매 수정 API가 아직 구현되지 않았습니다');
+    try {
+      const requestData: any = {};
+      if (data.title !== undefined) requestData.title = data.title;
+      if (data.description !== undefined) requestData.description = data.description;
+      if (data.startPrice !== undefined) requestData.startPrice = data.startPrice;
+      if (data.bidStep !== undefined) requestData.bidStep = data.bidStep;
+      if (data.endAt !== undefined) requestData.endAt = data.endAt;
+      if (data.thumbnailImageUrl !== undefined) requestData.thumbnailImageUrl = data.thumbnailImageUrl;
+      if (data.categoryPath !== undefined) requestData.categoryPath = data.categoryPath;
+      if (data.tags !== undefined) requestData.tags = data.tags;
+      if (data.summary !== undefined) requestData.summary = data.summary;
+
+      await apiRequest(`/api/auctions/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(requestData),
+      });
+
+      // 수정된 경매 정보 조회
+      return await auctionApi.getAuction(id);
+    } catch (error) {
+      console.error('경매 수정 실패:', error);
+      throw error;
+    }
   },
 
   /**
    * 경매 삭제
-   * TODO: 백엔드 API 연동 필요
+   * DELETE /api/auctions/{id}
    */
   deleteAuction: async (id: number): Promise<void> => {
-    throw new Error('경매 삭제 API가 아직 구현되지 않았습니다');
+    try {
+      await apiRequest(`/api/auctions/${id}`, {
+        method: 'DELETE',
+      });
+      console.log('경매 삭제 성공:', id);
+    } catch (error) {
+      console.error('경매 삭제 실패:', error);
+      throw error;
+    }
   },
 
   /**
    * 경매 입찰
-   * TODO: 백엔드 API 연동 필요
+   * POST /api/auctions/{auctionId}/bids
    */
   placeBid: async (
     auctionId: number,
-    bidAmount: number
-  ): Promise<AuctionResponse> => {
-    throw new Error('경매 입찰 API가 아직 구현되지 않았습니다');
+    bidData: BidRequest
+  ): Promise<BidResponse> => {
+    try {
+      const backendResponse = await apiRequest<any>(`/api/auctions/${auctionId}/bids`, {
+        method: 'POST',
+        body: JSON.stringify({
+          price: bidData.price,
+        }),
+      });
+
+      return {
+        bidId: backendResponse.bidId || backendResponse.bid_id || 0,
+        auction: backendResponse.auction ? await auctionApi.getAuction(backendResponse.auction.id || auctionId) : await auctionApi.getAuction(auctionId),
+        bidPrice: backendResponse.bidPrice || backendResponse.bid_price || bidData.price,
+        isHighestBidder: backendResponse.isHighestBidder || backendResponse.is_highest_bidder || false,
+      };
+    } catch (error) {
+      console.error('경매 입찰 실패:', error);
+      throw error;
+    }
   },
 
   /**
    * 특정 경매의 입찰 내역 조회
-   * TODO: 백엔드 API 연동 필요
+   * GET /api/auctions/{auctionId}/bids
    */
-  getBidsByAuction: async (auctionId: number): Promise<BidResponse[]> => {
-    return [];
+  getBidsByAuction: async (auctionId: number): Promise<BidSummary[]> => {
+    try {
+      const backendResponse = await apiRequest<any[]>(`/api/auctions/${auctionId}/bids`, {
+        method: 'GET',
+      });
+
+      return backendResponse.map((bid: any) => ({
+        id: bid.id || 0,
+        bidder: bid.bidder ? {
+          id: bid.bidder.id || 0,
+          email: bid.bidder.email || null,
+          name: bid.bidder.name || bid.bidder.username || '',
+          nickname: bid.bidder.nickname || '',
+          profileImageUrl: bid.bidder.profileImageUrl || bid.bidder.profile_image_url || null,
+          phone: bid.bidder.phone || bid.bidder.phoneNumber || null,
+        } : {
+          id: 0,
+          email: null,
+          name: '',
+          nickname: '',
+          profileImageUrl: null,
+          phone: null,
+        },
+        bidderNickname: bid.bidderNickname || bid.bidder_nickname || bid.bidder?.nickname || '',
+        bidPrice: bid.bidPrice || bid.bid_price || 0,
+        bidAt: bid.bidAt || bid.bid_at || bid.createdAt || '',
+      }));
+    } catch (error) {
+      console.error('입찰 내역 조회 실패:', error);
+      throw error;
+    }
   },
 
   /**
-   * 사용자의 입찰 내역 조회
-   * TODO: 백엔드 API 연동 필요
+   * 사용자의 입찰 내역 조회 (마이페이지용)
+   * GET /api/auctions/my-bids
    */
-  getMyBids: async (userId?: number): Promise<BidResponse[]> => {
-    return [];
-  },
+  getMyBids: async (): Promise<MyBidsSummary[]> => {
+    try {
+      const backendResponse = await apiRequest<any[]>('/api/auctions/my-bids', {
+        method: 'GET',
+      });
 
-  /**
-   * 경매 상태 자동 체크 및 업데이트
-   * TODO: 백엔드에서 자동 처리하므로 클라이언트에서 불필요
-   */
-  checkAndUpdateAuctionStatus: async (auctionId: number): Promise<AuctionResponse | null> => {
-    return null;
-  },
-
-  /**
-   * 모든 경매 상태 일괄 체크 및 업데이트
-   * TODO: 백엔드에서 자동 처리하므로 클라이언트에서 불필요
-   */
-  checkAllAuctionsStatus: async (): Promise<void> => {
-    // 백엔드에서 자동 처리
+      return backendResponse.map((myBid: any) => ({
+        auctionId: myBid.auctionId || myBid.auction_id || 0,
+        auctionTitle: myBid.auctionTitle || myBid.auction_title || '',
+        auctionThumbnailUrl: myBid.auctionThumbnailUrl || myBid.auction_thumbnail_url || null,
+        auctionStatus: myBid.auctionStatus || myBid.auction_status || 'SCHEDULED',
+        myAuctionStatus: myBid.myAuctionStatus || myBid.my_auction_status || 'OUTBID',
+        lastBidPrice: myBid.lastBidPrice || myBid.last_bid_price || 0,
+        currentPrice: myBid.currentPrice || myBid.current_price || 0,
+        isHighestBidder: myBid.isHighestBidder !== undefined ? myBid.isHighestBidder : (myBid.is_highest_bidder !== undefined ? myBid.is_highest_bidder : false),
+        lastBidAt: myBid.lastBidAt || myBid.last_bid_at || '',
+        auctionEndAt: myBid.auctionEndAt || myBid.auction_end_at || '',
+        isPaid: myBid.isPaid !== undefined ? myBid.isPaid : (myBid.is_paid !== undefined ? myBid.is_paid : false),
+      }));
+    } catch (error) {
+      console.error('내 입찰 내역 조회 실패:', error);
+      throw error;
+    }
   },
 
   /**
    * 경매 검색
-   * TODO: 백엔드 API 연동 필요
+   * GET /api/auctions/search?query={query}&status={status}&limit={limit}
    */
   searchAuctions: async (query: string, params?: {
-    status?: AuctionResponse['status'];
+    status?: AuctionStatus;
     limit?: number;
-  }): Promise<AuctionResponse[]> => {
-    return [];
+  }): Promise<AuctionSummary[]> => {
+    try {
+      const queryParams = new URLSearchParams();
+      queryParams.append('query', query);
+      if (params?.status) queryParams.append('status', params.status);
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
+
+      const endpoint = `/api/auctions/search?${queryParams.toString()}`;
+      const backendResponse = await apiRequest<AuctionSummary[]>(endpoint, {
+        method: 'GET',
+      });
+
+      return backendResponse.map((auction: any) => ({
+        id: auction.id || 0,
+        title: auction.title || '',
+        thumbnailImageUrl: auction.thumbnailImageUrl || auction.thumbnail_url || null,
+        startPrice: auction.startPrice || auction.start_price || 0,
+        currentPrice: auction.currentPrice || auction.current_price || 0,
+        bidStep: auction.bidStep || auction.bid_step || 0,
+        status: auction.status || 'SCHEDULED',
+        startAt: auction.startAt || auction.start_at || '',
+        endAt: auction.endAt || auction.end_at || '',
+        bidCount: auction.bidCount || auction.bid_count || 0,
+        categoryPath: auction.categoryPath || auction.category_path || null,
+        summary: auction.summary || null,
+      }));
+    } catch (error) {
+      console.error('경매 검색 실패:', error);
+      throw error;
+    }
   },
 };
 
 // API 함수들 - 사용자 관련
 export const userApi = {
   /**
-   * 사용자 정보 조회
-   * TODO: 백엔드 API 연동 필요
+   * 마이페이지 데이터 조회 (내 경매, 입찰 내역 등)
+   * GET /api/users/my-page
+   */
+  getMyPage: async (): Promise<UserPageResponse> => {
+    try {
+      const backendResponse = await apiRequest<any>('/api/users/my-page', {
+        method: 'GET',
+      });
+
+      return {
+        user: backendResponse.user ? {
+          id: backendResponse.user.id || 0,
+          email: backendResponse.user.email || null,
+          name: backendResponse.user.name || backendResponse.user.username || '',
+          nickname: backendResponse.user.nickname || '',
+          profileImageUrl: backendResponse.user.profileImageUrl || backendResponse.user.profile_image_url || null,
+          phone: backendResponse.user.phone || backendResponse.user.phoneNumber || null,
+          roleLevel: backendResponse.user.roleLevel || backendResponse.user.role_level || 0,
+        } : {
+          id: 0,
+          email: null,
+          name: '',
+          nickname: '',
+          profileImageUrl: null,
+          phone: null,
+        },
+        auctions: (backendResponse.auctions || []).map((auction: any) => ({
+          id: auction.id || 0,
+          title: auction.title || '',
+          thumbnailImageUrl: auction.thumbnailImageUrl || auction.thumbnail_url || null,
+          startPrice: auction.startPrice || auction.start_price || 0,
+          currentPrice: auction.currentPrice || auction.current_price || 0,
+          bidStep: auction.bidStep || auction.bid_step || 0,
+          status: auction.status || 'SCHEDULED',
+          startAt: auction.startAt || auction.start_at || '',
+          endAt: auction.endAt || auction.end_at || '',
+          bidCount: auction.bidCount || auction.bid_count || 0,
+          categoryPath: auction.categoryPath || auction.category_path || null,
+          summary: auction.summary || null,
+        })),
+        myBids: await Promise.all((backendResponse.myBids || []).map(async (bid: any) => {
+          let auction: AuctionResponse;
+          if (bid.auction) {
+            auction = await auctionApi.getAuction(bid.auction.id || bid.auctionId || bid.auction_id);
+          } else {
+            // auction 정보가 없으면 빈 경매 객체 반환
+            auction = {
+              id: bid.auctionId || bid.auction_id || 0,
+              seller: { id: 0, email: null, name: '', nickname: '', profileImageUrl: null, phone: null },
+              title: '',
+              description: '',
+              thumbnailImageUrl: null,
+              imageUrl: null,
+              startPrice: 0,
+              currentPrice: 0,
+              bidStep: 0,
+              buyoutPrice: null,
+              status: 'SCHEDULED',
+              startAt: '',
+              endAt: '',
+              winner: null,
+            };
+          }
+          return {
+            bidId: bid.bidId || bid.bid_id || 0,
+            auction,
+            bidPrice: bid.bidPrice || bid.bid_price || 0,
+            isHighestBidder: bid.isHighestBidder !== undefined ? bid.isHighestBidder : (bid.is_highest_bidder !== undefined ? bid.is_highest_bidder : false),
+          };
+        })),
+        myMyBids: (backendResponse.myMyBids || []).map((myBid: any) => ({
+          auctionId: myBid.auctionId || myBid.auction_id || 0,
+          auctionTitle: myBid.auctionTitle || myBid.auction_title || '',
+          auctionThumbnailUrl: myBid.auctionThumbnailUrl || myBid.auction_thumbnail_url || null,
+          auctionStatus: myBid.auctionStatus || myBid.auction_status || 'SCHEDULED',
+          myAuctionStatus: myBid.myAuctionStatus || myBid.my_auction_status || 'OUTBID',
+          lastBidPrice: myBid.lastBidPrice || myBid.last_bid_price || 0,
+          currentPrice: myBid.currentPrice || myBid.current_price || 0,
+          isHighestBidder: myBid.isHighestBidder !== undefined ? myBid.isHighestBidder : (myBid.is_highest_bidder !== undefined ? myBid.is_highest_bidder : false),
+          lastBidAt: myBid.lastBidAt || myBid.last_bid_at || '',
+          auctionEndAt: myBid.auctionEndAt || myBid.auction_end_at || '',
+          isPaid: myBid.isPaid !== undefined ? myBid.isPaid : (myBid.is_paid !== undefined ? myBid.is_paid : false),
+        })),
+      };
+    } catch (error) {
+      console.error('마이페이지 조회 실패:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 프로필 상세 조회 (다른 사용자 프로필 보기)
+   * GET /api/users/{id}/profile
+   */
+  getUserProfile: async (id: number): Promise<UserProfileResponse> => {
+    try {
+      const backendResponse = await apiRequest<any>(`/api/users/${id}/profile`, {
+        method: 'GET',
+      });
+
+      return {
+        user: backendResponse.user ? {
+          id: backendResponse.user.id || 0,
+          email: backendResponse.user.email || null,
+          name: backendResponse.user.name || backendResponse.user.username || '',
+          nickname: backendResponse.user.nickname || '',
+          profileImageUrl: backendResponse.user.profileImageUrl || backendResponse.user.profile_image_url || null,
+          phone: backendResponse.user.phone || backendResponse.user.phoneNumber || null,
+          roleLevel: backendResponse.user.roleLevel || backendResponse.user.role_level || 0,
+        } : {
+          id: 0,
+          email: null,
+          name: '',
+          nickname: '',
+          profileImageUrl: null,
+          phone: null,
+        },
+      };
+    } catch (error) {
+      console.error('프로필 조회 실패:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 사용자 정보 조회 (프로필 상세와 동일)
+   * GET /api/users/{id}
    */
   getUser: async (id: number): Promise<UserResponse> => {
-    throw new Error('사용자 정보 조회 API가 아직 구현되지 않았습니다');
+    try {
+      const profile = await userApi.getUserProfile(id);
+      return profile.user;
+    } catch (error) {
+      console.error('사용자 정보 조회 실패:', error);
+      throw error;
+    }
   },
 
   /**
@@ -709,13 +1089,36 @@ export const userApi = {
 
   /**
    * 사용자 정보 수정
-   * TODO: 백엔드 API 연동 필요
+   * PUT /api/users/me
    */
   updateUser: async (
-    id: number,
-    data: Partial<UserResponse>
+    data: ProfileUpdateRequest
   ): Promise<UserResponse> => {
-    throw new Error('사용자 정보 수정 API가 아직 구현되지 않았습니다');
+    try {
+      const requestData: any = {};
+      if (data.username !== undefined) requestData.username = data.username;
+      if (data.nickname !== undefined) requestData.nickname = data.nickname;
+      if (data.phoneNumber !== undefined) requestData.phoneNumber = data.phoneNumber;
+      if (data.profileImageUrl !== undefined) requestData.profileImageUrl = data.profileImageUrl;
+
+      const backendResponse = await apiRequest<any>('/api/users/me', {
+        method: 'PUT',
+        body: JSON.stringify(requestData),
+      });
+
+      return {
+        id: backendResponse.id || 0,
+        email: backendResponse.email || null,
+        name: backendResponse.name || backendResponse.username || '',
+        nickname: backendResponse.nickname || '',
+        profileImageUrl: backendResponse.profileImageUrl || backendResponse.profile_image_url || null,
+        phone: backendResponse.phone || backendResponse.phoneNumber || null,
+        roleLevel: backendResponse.roleLevel || backendResponse.role_level || 0,
+      };
+    } catch (error) {
+      console.error('사용자 정보 수정 실패:', error);
+      throw error;
+    }
   },
 };
 

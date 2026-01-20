@@ -13,8 +13,8 @@ import { useState, useEffect, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { useAuth } from "@/src/contexts/auth-context"
 import { ProtectedRoute } from "@/src/components/protected-route"
-import { projectApi, auctionApi } from "@/src/services/api"
-import { ProjectResponse, AuctionResponse, SupportResponse, BidResponse } from "@/src/types/api"
+import { projectApi, auctionApi, userApi } from "@/src/services/api"
+import { ProjectResponse, AuctionResponse, SupportResponse, MyBidsSummary, UserPageResponse } from "@/src/types/api"
 import { getWishlist } from "@/src/lib/wishlist"
 import { canEditProject, canCancelProject, canEditAuction, canCancelAuction } from "@/src/lib/permissions"
 import Link from "next/link"
@@ -27,7 +27,7 @@ function ProfileTabs({ defaultTab }: { defaultTab: string }) {
   const [myProjects, setMyProjects] = useState<ProjectResponse[]>([])
   const [myAuctions, setMyAuctions] = useState<AuctionResponse[]>([])
   const [mySupports, setMySupports] = useState<SupportResponse[]>([])
-  const [myBids, setMyBids] = useState<BidResponse[]>([])
+  const [myBids, setMyBids] = useState<MyBidsSummary[]>([])
   const [favoriteProjects, setFavoriteProjects] = useState<ProjectResponse[]>([])
   const [favoriteAuctions, setFavoriteAuctions] = useState<AuctionResponse[]>([])
   const [loading, setLoading] = useState(true)
@@ -42,30 +42,34 @@ function ProfileTabs({ defaultTab }: { defaultTab: string }) {
     try {
       setLoading(true)
       
-      // 사용자 ID 확인
-      if (!user?.id) {
-        toast.error("사용자 정보를 불러올 수 없습니다")
-        return
+      // 마이페이지 데이터 조회
+      const myPageData: UserPageResponse = await userApi.getMyPage()
+      
+      // 경매 상세 정보로 변환 (AuctionSummary -> AuctionResponse)
+      const myAuctionsList: AuctionResponse[] = []
+      for (const auctionSummary of myPageData.auctions) {
+        try {
+          const auctionDetail = await auctionApi.getAuction(auctionSummary.id)
+          myAuctionsList.push(auctionDetail)
+        } catch (err) {
+          console.error(`경매 ${auctionSummary.id} 상세 조회 실패:`, err)
+        }
       }
       
-      const userId = user.id
-      
-      // 등록한 프로젝트/경매는 현재 사용자가 생성자인 것만 필터링
-      const allProjects = await projectApi.getProjects()
-      const allAuctions = await auctionApi.getAuctions()
-      
-      const myProjectsList = allProjects.filter(p => p.creator.id === userId)
-      const myAuctionsList = allAuctions.filter(a => a.seller.id === userId)
-      
-      setMyProjects(myProjectsList)
       setMyAuctions(myAuctionsList)
       
-      // 후원/입찰 내역
-      const supports = await projectApi.getMySupports(userId)
-      const bids = await auctionApi.getMyBids(userId)
+      // 내 프로젝트는 별도로 조회 (백엔드에서 제공하지 않으면 필터링)
+      const allProjects = await projectApi.getProjects()
+      const userId = user?.id || myPageData.user.id
+      const myProjectsList = allProjects.filter(p => p.creator.id === userId)
+      setMyProjects(myProjectsList)
       
+      // 후원 내역은 별도로 조회
+      const supports = await projectApi.getMySupports(userId)
       setMySupports(supports)
-      setMyBids(bids)
+      
+      // 입찰 내역은 myMyBids 사용
+      setMyBids(myPageData.myMyBids)
       
       // 찜한 항목 로드
       const wishlist = getWishlist()
@@ -77,6 +81,7 @@ function ProfileTabs({ defaultTab }: { defaultTab: string }) {
         .map(item => item.id)
       
       const favoriteProjectsList = allProjects.filter(p => favoriteProjectIds.includes(p.id))
+      const allAuctions = await auctionApi.getAuctions()
       const favoriteAuctionsList = allAuctions.filter(a => favoriteAuctionIds.includes(a.id))
       
       setFavoriteProjects(favoriteProjectsList)

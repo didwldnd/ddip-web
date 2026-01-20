@@ -6,12 +6,12 @@ import { EmptyState } from "@/src/components/empty-state"
 import { FilterBar } from "@/src/components/filter-bar"
 import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { auctionApi } from "@/src/services/api"
-import { AuctionResponse } from "@/src/types/api"
+import { AuctionSummary } from "@/src/types/api"
 import { useFilterStore, filterAndSortAuctions } from "@/src/stores/filterStore"
 import { Loader2, Gavel } from "lucide-react"
 
 export default function AuctionsPage() {
-  const [auctions, setAuctions] = useState<AuctionResponse[]>([])
+  const [auctions, setAuctions] = useState<AuctionSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)

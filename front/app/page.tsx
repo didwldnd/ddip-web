@@ -9,7 +9,7 @@ import { Button } from "@/src/components/ui/button"
 import Link from "next/link"
 import { useState, useEffect, useMemo } from "react"
 import { projectApi, auctionApi } from "@/src/services/api"
-import { ProjectResponse, AuctionResponse } from "@/src/types/api"
+import { ProjectResponse, AuctionSummary } from "@/src/types/api"
 import { Loader2, Package, Gavel, Clock, ArrowRight, Sparkles } from "lucide-react"
 
 export default function HomePage() {

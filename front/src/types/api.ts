@@ -91,24 +91,61 @@ export interface ProjectResponse {
   summary?: string | null;
 }
 
-// 경매 관련 타입
+// 경매 상태 타입
+export type AuctionStatus = 'SCHEDULED' | 'RUNNING' | 'ENDED' | 'CANCELED';
+export type MyAuctionStatus = 'HIGHEST_BIDDER' | 'OUTBID' | 'ENDED_WON' | 'ENDED_LOST';
+
+// 경매 생성 요청 타입
+export interface AuctionCreateRequest {
+  title: string;
+  description: string;
+  startPrice: number;
+  bidStep: number;
+  endAt: string; // ISO 8601 형식
+  thumbnailImageUrl?: string | null;
+  categoryPath?: string | null;
+  tags?: string | null;
+  summary?: string | null;
+}
+
+// 경매 상세 응답 타입
 export interface AuctionResponse {
   id: number;
   seller: UserResponse;
   title: string;
   description: string;
+  thumbnailImageUrl: string | null;
   imageUrl: string | null; // 하위 호환성 유지 (첫 번째 이미지)
   imageUrls?: string[] | null; // 다중 이미지 (최대 3장)
   startPrice: number;
   currentPrice: number;
   bidStep: number;
   buyoutPrice: number | null;
-  status: 'SCHEDULED' | 'RUNNING' | 'ENDED' | 'CANCELED';
+  status: AuctionStatus;
   startAt: string;
   endAt: string;
   winner: UserResponse | null;
   categoryPath?: string | null;
   tags?: string | null;
+  summary?: string | null;
+  bids?: BidSummary[]; // 입찰 내역 리스트
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// 경매 목록 요약 타입
+export interface AuctionSummary {
+  id: number;
+  title: string;
+  thumbnailImageUrl: string | null;
+  startPrice: number;
+  currentPrice: number;
+  bidStep: number;
+  status: AuctionStatus;
+  startAt: string;
+  endAt: string;
+  bidCount: number;
+  categoryPath?: string | null;
   summary?: string | null;
 }
 
@@ -148,12 +185,53 @@ export interface PledgeResponse {
   status?: string;
 }
 
-// 입찰 관련 타입
+// 입찰 요청 타입
+export interface BidRequest {
+  price: number;
+}
+
+// 입찰 응답 타입
 export interface BidResponse {
+  bidId: number;
+  auction: AuctionResponse;
+  bidPrice: number;
+  isHighestBidder: boolean;
+}
+
+// 입찰 요약 타입 (경매 상세 페이지용)
+export interface BidSummary {
   id: number;
+  bidder: UserResponse;
+  bidderNickname: string;
+  bidPrice: number;
+  bidAt: string; // 입찰 시간
+}
+
+// 내 입찰 현황 타입 (마이페이지용)
+export interface MyBidsSummary {
   auctionId: number;
   auctionTitle: string;
-  amount: number;
-  bidder: UserResponse;
-  createdAt: string;
+  auctionThumbnailUrl: string | null;
+  auctionStatus: AuctionStatus;
+  myAuctionStatus: MyAuctionStatus;
+  lastBidPrice: number;
+  currentPrice: number;
+  isHighestBidder: boolean; // 현재 최고 입찰자인지 여부
+  lastBidAt: string;
+  auctionEndAt: string;
+  isPaid: boolean;
+}
+
+// 마이페이지 응답 타입 (백엔드 UserPageResponseDto와 일치)
+export interface UserPageResponse {
+  user: UserResponse;
+  auctions: AuctionSummary[]; // 내가 생성한 경매 목록
+  myBids: BidResponse[]; // 내 입찰 응답 목록 (BidsResponseDto)
+  myMyBids: MyBidsSummary[]; // 내 입찰 현황 목록 (MyBidsSummaryDto)
+}
+
+// 프로필 상세 응답 타입 (다른 사용자 프로필 보기용)
+export interface UserProfileResponse {
+  user: UserResponse;
+  // 추가 정보가 필요하면 여기에 추가
 }

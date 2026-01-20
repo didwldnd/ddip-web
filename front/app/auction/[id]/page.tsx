@@ -15,10 +15,9 @@ import { useState, useEffect, use, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Alert, AlertDescription } from "@/src/components/ui/alert"
 import { auctionApi } from "@/src/services/api"
-import { AuctionResponse } from "@/src/types/api"
+import { AuctionResponse, BidSummary } from "@/src/types/api"
 import { toast } from "sonner"
 import { useAuth } from "@/src/contexts/auth-context"
-import { BidResponse } from "@/src/types/api"
 import { maskUserId, formatRelativeTime } from "@/src/lib/user-utils"
 import { formatIncrement } from "@/src/lib/format-amount"
 import { isInWishlist, toggleWishlist } from "@/src/lib/wishlist"
@@ -39,7 +38,7 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
   const [bidAmount, setBidAmount] = useState(0)
   const [timeLeft, setTimeLeft] = useState("")
   const [isBidding, setIsBidding] = useState(false)
-  const [bidHistory, setBidHistory] = useState<BidResponse[]>([])
+  const [bidHistory, setBidHistory] = useState<BidSummary[]>([])
   const [loadingBids, setLoadingBids] = useState(false)
   const [isFavorite, setIsFavorite] = useState(false)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
@@ -81,9 +80,6 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
         if (isNaN(auctionId)) {
           throw new Error("유효하지 않은 경매 ID입니다")
         }
-        
-        // 상태 체크 및 업데이트
-        await auctionApi.checkAndUpdateAuctionStatus(auctionId)
         
         let data = await auctionApi.getAuction(auctionId)
         setAuction(data)
@@ -369,11 +365,11 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
       // }
       
       // Mock API 사용 (웹소켓 미사용 시)
-      const updatedAuction = await auctionApi.placeBid(auctionId, bidAmount)
+      const bidResponse = await auctionApi.placeBid(auctionId, { price: bidAmount })
+      const updatedAuction = bidResponse.auction
       
-      // 입찰 후 상태 체크 (종료 시간이 지났을 수 있음)
-      const finalAuction = await auctionApi.checkAndUpdateAuctionStatus(auctionId)
-      const auctionToUse = finalAuction || updatedAuction
+      // 입찰 후 경매 정보 새로고침
+      const auctionToUse = await auctionApi.getAuction(auctionId)
       
       setAuction(auctionToUse)
       const bidStep = auctionToUse.bidStep || 1000

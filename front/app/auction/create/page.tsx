@@ -142,20 +142,16 @@ export default function CreateAuctionPage() {
         return
       }
 
-      // 시작일이 현재 시간 이후면 SCHEDULED, 이미 지났으면 RUNNING
-      // (하지만 위에서 이미 과거 날짜는 차단했으므로 항상 SCHEDULED)
-      const status: "SCHEDULED" | "RUNNING" = startDateTimeObj <= now ? "RUNNING" : "SCHEDULED"
-
-      const auctionData = {
-        ...data,
-        startAt: startDateTimeISO,
+      const auctionData: AuctionCreateRequest = {
+        title: data.title,
+        description: data.description,
+        startPrice: data.startPrice,
+        bidStep: data.bidStep,
         endAt: endDateTimeISO,
-        imageUrl,
-        imageUrls,
-        currentPrice: data.startPrice,
-        status,
-        winner: null,
-        buyoutPrice: data.buyoutPrice ?? null, // undefined를 null로 변환
+        thumbnailImageUrl: imageUrl || null,
+        categoryPath: data.categoryPath || undefined,
+        tags: data.tags || undefined,
+        summary: data.summary || undefined,
       }
 
       const createdAuction = await auctionApi.createAuction(auctionData)
