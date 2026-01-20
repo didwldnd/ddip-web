@@ -235,3 +235,32 @@ export interface UserProfileResponse {
   user: UserResponse;
   // 추가 정보가 필요하면 여기에 추가
 }
+
+// 배송지 관련 타입
+export interface AddressCreateRequest {
+  label?: string; // 배송지 라벨 (선택사항, 최대 30자)
+  recipientName: string; // 수령인 이름 (필수, 최대 100자)
+  phone: string; // 전화번호 (필수, 최대 20자)
+  zipCode: string; // 우편번호 (필수, 최대 10자)
+  address: string; // 주소 (백엔드: address1, 필수, 최대 255자)
+  detailAddress: string; // 상세주소 (백엔드: address2, 필수, 최대 255자)
+  setAsDefault?: boolean; // 기본 배송지로 설정 여부
+}
+
+export interface AddressUpdateRequest {
+  recipientName?: string;
+  phone?: string;
+  zipCode?: string;
+  address?: string;
+  detailAddress?: string;
+}
+
+export interface AddressResponse {
+  id: number;
+  recipientName: string;
+  phone: string;
+  zipCode: string;
+  address: string;
+  detailAddress: string;
+  isDefault: boolean; // 기본 배송지 여부
+}

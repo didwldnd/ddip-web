@@ -11,14 +11,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/src/components/ui/ta
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/src/components/ui/dialog"
 import { Input } from "@/src/components/ui/input"
 import { Label } from "@/src/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/src/components/ui/select"
 import { Calendar, Clock, Heart, Share2, TrendingUp, MapPin, CheckCircle2, Loader2, AlertCircle, Edit, X } from "lucide-react"
 import Image from "next/image"
 import { useState, useEffect, use } from "react"
 import { useRouter } from "next/navigation"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Alert, AlertDescription } from "@/src/components/ui/alert"
-import { projectApi } from "@/src/services/api"
-import { ProjectResponse } from "@/src/types/api"
+import { projectApi, addressApi } from "@/src/services/api"
+import { ProjectResponse, AddressResponse, AddressCreateRequest } from "@/src/types/api"
 import { RewardCard } from "@/src/components/reward-card"
 import { toast } from "sonner"
 import { useAuth } from "@/src/contexts/auth-context"
@@ -40,6 +41,17 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [timeLeft, setTimeLeft] = useState<string>("")
   const [isFavorite, setIsFavorite] = useState(false)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
+  const [addresses, setAddresses] = useState<AddressResponse[]>([])
+  const [selectedAddressId, setSelectedAddressId] = useState<number | null>(null)
+  const [showAddressForm, setShowAddressForm] = useState(false)
+  const [newAddress, setNewAddress] = useState<AddressCreateRequest>({
+    recipientName: "",
+    phone: "",
+    zipCode: "",
+    address: "",
+    detailAddress: "",
+    setAsDefault: false,
+  })
 
   // 프로젝트 데이터 로드
   useEffect(() => {
@@ -91,6 +103,30 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
     loadProject()
   }, [id])
+
+  // 배송지 목록 로드 (다이얼로그 열 때)
+  useEffect(() => {
+    if (supportDialogOpen && isAuthenticated) {
+      loadAddresses()
+    }
+  }, [supportDialogOpen, isAuthenticated])
+
+  const loadAddresses = async () => {
+    try {
+      const addressList = await addressApi.getMyAddresses()
+      setAddresses(addressList)
+      // 기본 배송지 자동 선택
+      const defaultAddr = addressList.find(addr => addr.isDefault)
+      if (defaultAddr) {
+        setSelectedAddressId(defaultAddr.id)
+      } else if (addressList.length > 0) {
+        setSelectedAddressId(addressList[0].id)
+      }
+    } catch (error) {
+      console.error("배송지 로드 실패:", error)
+      // 에러가 발생해도 구매는 가능하도록 함
+    }
+  }
 
   // 프로젝트 상태 주기적 체크 (30초마다)
   useEffect(() => {
@@ -212,6 +248,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       setSupportDialogOpen(false)
       setSupportAmount("")
       setSelectedRewardTier(null)
+      setSelectedAddressId(null)
+      setShowAddressForm(false)
       
       // 후원 후 프로젝트 정보 새로고침
       const updatedProject = await projectApi.getProject(project.id)
@@ -689,7 +727,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                       {isAuthenticated ? "리워드 구매하기" : "로그인 후 구매하기"}
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="max-w-md">
+                  <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                       <DialogTitle>리워드 구매하기</DialogTitle>
                       <DialogDescription>
@@ -761,10 +799,157 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                         )}
                       </div>
 
+                      {/* 배송지 선택 */}
+                      {!showAddressForm ? (
+                        <div className="space-y-2">
+                          <Label>배송지 선택 *</Label>
+                          {addresses.length > 0 ? (
+                            <select
+                              value={selectedAddressId || ""}
+                              onChange={(e) => setSelectedAddressId(parseInt(e.target.value, 10))}
+                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <option value="">배송지를 선택해주세요</option>
+                              {addresses.map((address) => (
+                                <option key={address.id} value={address.id}>
+                                  {address.recipientName} {address.isDefault ? "(기본)" : ""} - {address.address}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <Alert>
+                              <AlertDescription>
+                                등록된 배송지가 없습니다. 배송지를 추가해주세요.
+                              </AlertDescription>
+                            </Alert>
+                          )}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setShowAddressForm(true)}
+                            className="w-full"
+                          >
+                            <MapPin className="mr-2 size-4" />
+                            새 배송지 추가
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="space-y-4 border-t pt-4">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-base font-semibold">배송지 정보</Label>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setShowAddressForm(false)
+                                setNewAddress({
+                                  recipientName: "",
+                                  phone: "",
+                                  zipCode: "",
+                                  address: "",
+                                  detailAddress: "",
+                                  setAsDefault: false,
+                                })
+                              }}
+                            >
+                              취소
+                            </Button>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="recipientName">수령인 이름 *</Label>
+                            <Input
+                              id="recipientName"
+                              value={newAddress.recipientName}
+                              onChange={(e) => setNewAddress({ ...newAddress, recipientName: e.target.value })}
+                              placeholder="홍길동"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="phone">전화번호 *</Label>
+                            <Input
+                              id="phone"
+                              value={newAddress.phone}
+                              onChange={(e) => setNewAddress({ ...newAddress, phone: e.target.value })}
+                              placeholder="010-1234-5678"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="zipCode">우편번호 *</Label>
+                            <Input
+                              id="zipCode"
+                              value={newAddress.zipCode}
+                              onChange={(e) => setNewAddress({ ...newAddress, zipCode: e.target.value })}
+                              placeholder="12345"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="address">주소 *</Label>
+                            <Input
+                              id="address"
+                              value={newAddress.address}
+                              onChange={(e) => setNewAddress({ ...newAddress, address: e.target.value })}
+                              placeholder="서울특별시 강남구 테헤란로 123"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="detailAddress">상세주소 *</Label>
+                            <Input
+                              id="detailAddress"
+                              value={newAddress.detailAddress}
+                              onChange={(e) => setNewAddress({ ...newAddress, detailAddress: e.target.value })}
+                              placeholder="101동 101호"
+                            />
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="checkbox"
+                              id="setAsDefault"
+                              checked={newAddress.setAsDefault}
+                              onChange={(e) => setNewAddress({ ...newAddress, setAsDefault: e.target.checked })}
+                              className="rounded border-gray-300"
+                            />
+                            <Label htmlFor="setAsDefault" className="cursor-pointer">
+                              기본 배송지로 설정
+                            </Label>
+                          </div>
+                          <Button
+                            type="button"
+                            onClick={async () => {
+                              if (!newAddress.recipientName || !newAddress.phone || !newAddress.zipCode || !newAddress.address || !newAddress.detailAddress) {
+                                toast.error("모든 필드를 입력해주세요")
+                                return
+                              }
+                              try {
+                                const addressId = await addressApi.createAddress(newAddress)
+                                toast.success("배송지가 추가되었습니다")
+                                await loadAddresses()
+                                setSelectedAddressId(addressId)
+                                setShowAddressForm(false)
+                                setNewAddress({
+                                  recipientName: "",
+                                  phone: "",
+                                  zipCode: "",
+                                  address: "",
+                                  detailAddress: "",
+                                  setAsDefault: false,
+                                })
+                              } catch (error) {
+                                toast.error(error instanceof Error ? error.message : "배송지 추가에 실패했습니다")
+                              }
+                            }}
+                            className="w-full"
+                          >
+                            배송지 추가하기
+                          </Button>
+                        </div>
+                      )}
+
                       {/* 구매 버튼 */}
                       <Button
                         onClick={handleSupport}
-                        disabled={!supportAmount || isSupporting || (project.rewardTiers.length === 0)}
+                        disabled={!supportAmount || isSupporting || (project.rewardTiers.length === 0) || (!selectedAddressId && !showAddressForm)}
                         className="w-full"
                       >
                         {isSupporting ? (

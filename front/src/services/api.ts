@@ -22,6 +22,9 @@ import {
   PledgeCreateRequest,
   PledgeResponse,
   ProfileUpdateRequest,
+  AddressCreateRequest,
+  AddressUpdateRequest,
+  AddressResponse,
 } from '@/src/types/api';
 import { tokenStorage } from '@/src/lib/auth';
 
@@ -437,7 +440,7 @@ export const projectApi = {
    */
   createPledge: async (
     projectId: number,
-    data: { rewardTierId: number; amount: number }
+    data: PledgeCreateRequest
   ): Promise<PledgeResponse> => {
     try {
       const backendResponse = await apiRequest<any>(`/api/crowd/pledges/${projectId}`, {
@@ -1584,3 +1587,195 @@ export const authApi = {
   },
 };
 
+// API 함수들 - 배송지 관련
+export const addressApi = {
+  /**
+   * 기본 배송지 조회
+   * GET /api/addresses/default
+   * - 기본 배송지 있으면 200 + AddressResponse
+   * - 없으면 204 No Content
+   */
+  getDefaultAddress: async (): Promise<AddressResponse | null> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/addresses/default`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(tokenStorage.getAccessToken() ? {
+            'Authorization': `Bearer ${tokenStorage.getAccessToken()?.trim().replace(/^["']|["']$/g, '')}`,
+          } : {}),
+        },
+        credentials: 'include',
+      });
+
+      if (response.status === 204) {
+        return null; // 기본 배송지 없음
+      }
+
+      if (!response.ok) {
+        throw new Error(`배송지 조회 실패: ${response.status}`);
+      }
+
+      const backendResponse = await response.json();
+      return {
+        id: backendResponse.id || 0,
+        recipientName: backendResponse.recipientName || backendResponse.recipient_name || '',
+        phone: backendResponse.phone || '',
+        zipCode: backendResponse.zipCode || backendResponse.zip_code || '',
+        address: backendResponse.address1 || backendResponse.address || '', // 백엔드: address1
+        detailAddress: backendResponse.address2 || backendResponse.detailAddress || backendResponse.detail_address || '', // 백엔드: address2
+        isDefault: backendResponse.isDefault !== undefined ? backendResponse.isDefault : (backendResponse.is_default !== undefined ? backendResponse.is_default : false),
+      };
+    } catch (error) {
+      console.error('기본 배송지 조회 실패:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 내 배송지 목록 조회
+   * GET /api/addresses
+   */
+  getMyAddresses: async (): Promise<AddressResponse[]> => {
+    try {
+      const backendResponse = await apiRequest<any[]>('/api/addresses', {
+        method: 'GET',
+      });
+
+      return backendResponse.map((address: any) => ({
+        id: address.id || 0,
+        recipientName: address.recipientName || address.recipient_name || '',
+        phone: address.phone || '',
+        zipCode: address.zipCode || address.zip_code || '',
+        address: address.address1 || address.address || '', // 백엔드: address1
+        detailAddress: address.address2 || address.detailAddress || address.detail_address || '', // 백엔드: address2
+        isDefault: address.isDefault !== undefined ? address.isDefault : (address.is_default !== undefined ? address.is_default : false),
+      }));
+    } catch (error) {
+      console.error('배송지 목록 조회 실패:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 배송지 생성
+   * POST /api/addresses
+   * - setAsDefault=true 면 생성과 동시에 기본 배송지로 설정
+   * - 응답: 201 Created + 생성된 배송지 ID
+   */
+  createAddress: async (data: AddressCreateRequest): Promise<number> => {
+    try {
+      // 백엔드 DTO 필드명에 맞춰 데이터 변환
+      // 백엔드: label, recipientName, phone, zipCode, address1, address2, setAsDefault
+      const requestData: any = {
+        recipientName: data.recipientName,
+        phone: data.phone,
+        zipCode: data.zipCode,
+        address1: data.address, // 프론트엔드의 address → 백엔드의 address1
+        address2: data.detailAddress, // 프론트엔드의 detailAddress → 백엔드의 address2
+      };
+      
+      // label은 선택사항이므로 값이 있을 때만 추가
+      if (data.label) {
+        requestData.label = data.label;
+      }
+      
+      // setAsDefault는 boolean이므로 undefined가 아닐 때만 추가
+      if (data.setAsDefault !== undefined) {
+        requestData.setAsDefault = data.setAsDefault;
+      }
+
+      const addressId = await apiRequest<number>('/api/addresses', {
+        method: 'POST',
+        body: JSON.stringify(requestData),
+      });
+
+      return addressId;
+    } catch (error) {
+      console.error('배송지 생성 실패:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 배송지 상세 조회
+   * GET /api/addresses/{addressId}
+   */
+  getAddress: async (addressId: number): Promise<AddressResponse> => {
+    try {
+      const backendResponse = await apiRequest<any>(`/api/addresses/${addressId}`, {
+        method: 'GET',
+      });
+
+      return {
+        id: backendResponse.id || addressId,
+        recipientName: backendResponse.recipientName || backendResponse.recipient_name || '',
+        phone: backendResponse.phone || '',
+        zipCode: backendResponse.zipCode || backendResponse.zip_code || '',
+        address: backendResponse.address1 || backendResponse.address || '', // 백엔드: address1
+        detailAddress: backendResponse.address2 || backendResponse.detailAddress || backendResponse.detail_address || '', // 백엔드: address2
+        isDefault: backendResponse.isDefault !== undefined ? backendResponse.isDefault : (backendResponse.is_default !== undefined ? backendResponse.is_default : false),
+      };
+    } catch (error) {
+      console.error('배송지 조회 실패:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 배송지 수정
+   * PATCH /api/addresses/{addressId}
+   */
+  updateAddress: async (
+    addressId: number,
+    data: AddressUpdateRequest
+  ): Promise<void> => {
+    try {
+      const requestData: any = {};
+      if (data.recipientName !== undefined) requestData.recipientName = data.recipientName;
+      if (data.phone !== undefined) requestData.phone = data.phone;
+      if (data.zipCode !== undefined) requestData.zipCode = data.zipCode;
+      if (data.address !== undefined) requestData.address1 = data.address; // 백엔드: address1
+      if (data.detailAddress !== undefined) requestData.address2 = data.detailAddress; // 백엔드: address2
+
+      await apiRequest(`/api/addresses/${addressId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(requestData),
+      });
+    } catch (error) {
+      console.error('배송지 수정 실패:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 배송지 삭제
+   * DELETE /api/addresses/{addressId}
+   */
+  deleteAddress: async (addressId: number): Promise<void> => {
+    try {
+      await apiRequest(`/api/addresses/${addressId}`, {
+        method: 'DELETE',
+      });
+    } catch (error) {
+      console.error('배송지 삭제 실패:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 기본 배송지 설정
+   * PUT /api/addresses/{addressId}/default
+   * - 기존 기본 배송지는 해제되고, 지정한 addressId가 기본이 됨
+   */
+  setDefaultAddress: async (addressId: number): Promise<void> => {
+    try {
+      await apiRequest(`/api/addresses/${addressId}/default`, {
+        method: 'PUT',
+      });
+    } catch (error) {
+      console.error('기본 배송지 설정 실패:', error);
+      throw error;
+    }
+  },
+};
