@@ -21,8 +21,9 @@ import { useAuth } from "@/src/contexts/auth-context"
 import { maskUserId, formatRelativeTime } from "@/src/lib/user-utils"
 import { formatIncrement } from "@/src/lib/format-amount"
 import { isInWishlist, toggleWishlist } from "@/src/lib/wishlist"
-import { canEditAuction, canCancelAuction, canBidAuction, isAuctionSeller } from "@/src/lib/permissions"
+import { canEditAuction, canBidAuction, isAuctionSeller } from "@/src/lib/permissions"
 import { showAuctionNotificationIfNeeded } from "@/src/lib/auction-notifications"
+import { formatDateTimeInKorea } from "@/src/lib/date-utils"
 // 웹소켓 관련 (백엔드 준비되면 주석 해제)
 // import { useAuctionSocket } from "@/src/hooks/useAuctionSocket"
 // import { RealtimeBidList } from "@/src/components/realtime-bid-list"
@@ -297,24 +298,21 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
     })
   }
 
-  // 경매 취소 핸들러
-  const handleCancelAuction = async () => {
+  // 경매 삭제 핸들러 (판매자만 노출, DELETE /api/auction/{auctionId})
+  const handleDeleteAuction = async () => {
     if (!auction) return
-    
-    if (!confirm("정말로 이 경매를 취소하시겠습니까? 취소된 경매는 복구할 수 없습니다.")) {
+    if (!isAuctionSeller(auction, user)) return
+
+    if (!confirm("정말로 이 경매를 삭제하시겠습니까? 삭제된 경매는 복구할 수 없습니다.")) {
       return
     }
 
     try {
-      await auctionApi.updateAuction(auction.id, {
-        status: "CANCELED" as const,
-      })
-      toast.success("경매가 취소되었습니다")
-      // 경매 정보 새로고침
-      const updatedAuction = await auctionApi.getAuction(auction.id)
-      setAuction(updatedAuction)
+      await auctionApi.deleteAuction(auction.id)
+      toast.success("경매가 삭제되었습니다")
+      router.push("/auctions")
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "경매 취소에 실패했습니다")
+      toast.error(error instanceof Error ? error.message : "경매 삭제에 실패했습니다")
     }
   }
 
@@ -343,11 +341,8 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
       return
     }
 
-    // 실제 상태 확인 (시작일이 지났으면 RUNNING으로 간주)
-    const now = new Date()
-    const startTime = new Date(auction.startAt)
-    const hasStarted = !isNaN(startTime.getTime()) && startTime <= now
-    const canBid = auction.status === "RUNNING" || (auction.status === "SCHEDULED" && hasStarted)
+    // 백엔드 상태만 사용: RUNNING일 때만 입찰 가능 (ENDED는 서버가 내려줄 때만)
+    const canBid = auction.status === "RUNNING"
     
     if (!canBid) {
       toast.error("진행 중인 경매에만 입찰할 수 있습니다")
@@ -441,19 +436,8 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
     )
   }
 
-  // 시작일이 지났는지 확인하여 실제 상태 결정
-  const now = new Date()
-  const hasStarted = startTime <= now
-  const hasEnded = endTime <= now
-  
-  // 실제 경매 상태 계산 (시작일이 지났으면 RUNNING, 종료일이 지났으면 ENDED)
-  let actualStatus = auction.status
-  if (hasEnded && auction.status !== "ENDED" && auction.status !== "CANCELED") {
-    actualStatus = "ENDED" as const
-  } else if (hasStarted && auction.status === "SCHEDULED") {
-    actualStatus = "RUNNING" as const
-  }
-  
+  // 백엔드에서 내려준 상태만 사용 (서버 시간 기준으로 ENDED 전환되므로 클라이언트에서 덮어쓰지 않음)
+  const actualStatus = auction.status
   const isLive = actualStatus === "RUNNING"
 
   return (
@@ -583,14 +567,14 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                     수정하기
                   </Button>
                 )}
-                {canCancelAuction(auction, user) && (
+                {isAuctionSeller(auction, user) && (
                   <Button 
-                    variant="outline" 
+                    variant="destructive" 
                     size="sm"
-                    onClick={handleCancelAuction}
+                    onClick={handleDeleteAuction}
                   >
                     <X className="mr-2 size-4" />
-                    취소하기
+                    삭제하기
                   </Button>
                 )}
               </div>
@@ -661,31 +645,13 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                       <div className="flex items-center justify-between border-b pb-3">
                         <span className="font-medium">경매 시작</span>
                         <span className="text-muted-foreground">
-                          {isNaN(startTime.getTime()) 
-                            ? "날짜 오류" 
-                            : startTime.toLocaleString("ko-KR", { 
-                                year: "numeric", 
-                                month: "long", 
-                                day: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit"
-                              })
-                          }
+                          {formatDateTimeInKorea(auction.startAt)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="font-medium">경매 종료</span>
                         <span className="text-muted-foreground">
-                          {isNaN(endTime.getTime()) 
-                            ? "날짜 오류" 
-                            : endTime.toLocaleString("ko-KR", { 
-                                year: "numeric", 
-                                month: "long", 
-                                day: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit"
-                              })
-                          }
+                          {formatDateTimeInKorea(auction.endAt)}
                         </span>
                       </div>
                     </div>
@@ -859,31 +825,13 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">경매 시작</span>
                     <span className="font-semibold">
-                      {isNaN(startTime.getTime()) 
-                        ? "날짜 오류" 
-                        : startTime.toLocaleString("ko-KR", { 
-                            year: "numeric", 
-                            month: "long", 
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit"
-                          })
-                      }
+                      {formatDateTimeInKorea(auction.startAt)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">경매 종료</span>
                     <span className="font-semibold">
-                      {isNaN(endTime.getTime()) 
-                        ? "날짜 오류" 
-                        : endTime.toLocaleString("ko-KR", { 
-                            year: "numeric", 
-                            month: "long", 
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit"
-                          })
-                      }
+                      {formatDateTimeInKorea(auction.endAt)}
                     </span>
                   </div>
                 </CardContent>
