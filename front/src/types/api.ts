@@ -138,6 +138,8 @@ export interface AuctionSummary {
   id: number;
   title: string;
   thumbnailImageUrl: string | null;
+  /** 목록/카드용 메인 이미지 URL (S3 풀 URL, thumbnailImageUrl과 동일 소스) */
+  imageUrl?: string | null;
   startPrice: number;
   currentPrice: number;
   bidStep: number;

@@ -31,6 +31,21 @@ import { tokenStorage } from '@/src/lib/auth';
 // 백엔드 API 기본 URL
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
 
+// S3 이미지 베이스 URL (cloud.aws.s3.bucket=ddip-image, region=ap-northeast-2 기준)
+const S3_IMAGE_BASE_URL =
+  process.env.NEXT_PUBLIC_S3_IMAGE_BASE_URL ||
+  'https://ddip-image.s3.ap-northeast-2.amazonaws.com';
+
+/** S3 키 또는 이미 전체 URL인 값을 브라우저에서 접근 가능한 URL로 변환 */
+function toS3ImageUrl(keyOrUrl: string | null | undefined): string | null {
+  if (!keyOrUrl || typeof keyOrUrl !== 'string') return null;
+  const trimmed = keyOrUrl.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+  const base = S3_IMAGE_BASE_URL.endsWith('/') ? S3_IMAGE_BASE_URL : S3_IMAGE_BASE_URL + '/';
+  return base + (trimmed.startsWith('/') ? trimmed.slice(1) : trimmed);
+}
+
 // API 요청 헬퍼 함수
 async function apiRequest<T>(
   endpoint: string,
@@ -619,20 +634,28 @@ export const auctionApi = {
         method: 'GET',
       });
 
-      return backendResponse.map((auction: any) => ({
-        id: auction.auctionId ?? auction.id ?? 0,
-        title: auction.title || '',
-        thumbnailImageUrl: auction.thumbnailImageUrl || auction.thumbnail_url || null,
-        startPrice: auction.startPrice || auction.start_price || 0,
-        currentPrice: auction.currentPrice || auction.current_price || 0,
-        bidStep: auction.bidStep || auction.bid_step || 0,
-        status: auction.auctionStatus ?? auction.status ?? 'SCHEDULED',
-        startAt: auction.startAt ?? auction.start_at ?? '',
-        endAt: auction.endAt ?? auction.end_at ?? '',
-        bidCount: auction.bidCount ?? auction.bid_count ?? 0,
-        categoryPath: auction.categoryPath ?? auction.category_path ?? null,
-        summary: auction.summary ?? null,
-      }));
+      return backendResponse.map((auction: any) => {
+        const mainUrl =
+          toS3ImageUrl(auction.mainImageKey) ??
+          auction.thumbnailImageUrl ??
+          auction.thumbnail_url ??
+          (auction.images?.[0] ? toS3ImageUrl(auction.images[0].s3Key ?? auction.images[0].imageKey ?? auction.images[0].imageUrl) ?? null : null);
+        return {
+          id: auction.auctionId ?? auction.id ?? 0,
+          title: auction.title || '',
+          thumbnailImageUrl: mainUrl,
+          imageUrl: mainUrl,
+          startPrice: auction.startPrice || auction.start_price || 0,
+          currentPrice: auction.currentPrice || auction.current_price || 0,
+          bidStep: auction.bidStep || auction.bid_step || 0,
+          status: auction.auctionStatus ?? auction.status ?? 'SCHEDULED',
+          startAt: auction.startAt ?? auction.start_at ?? '',
+          endAt: auction.endAt ?? auction.end_at ?? '',
+          bidCount: auction.bidCount ?? auction.bid_count ?? 0,
+          categoryPath: auction.categoryPath ?? auction.category_path ?? null,
+          summary: auction.summary ?? null,
+        };
+      });
     } catch (error) {
       console.error('경매 목록 조회 실패:', error);
       throw error;
@@ -649,12 +672,36 @@ export const auctionApi = {
         method: 'GET',
       });
 
-      // 백엔드 AuctionResponseDto 매핑 (auctionId, auctionStatus, images)
+      // 백엔드 AuctionDetailResponseDto: images[] → S3 풀 URL로 변환 (키 또는 URL 지원)
       const images = backendResponse.images ?? [];
-      const firstImageUrl = images[0]?.imageUrl ?? images[0]?.url ?? images[0]?.image_url ?? null;
-      const thumbnailUrl = backendResponse.thumbnailImageUrl ?? backendResponse.thumbnail_url ?? firstImageUrl;
-      const imageUrl = backendResponse.imageUrl ?? thumbnailUrl ?? firstImageUrl;
-      const imageUrls = backendResponse.imageUrls ?? (images.length ? images.map((img: any) => img.imageUrl ?? img.url ?? img.image_url).filter(Boolean) : null) ?? (imageUrl ? [imageUrl] : null);
+      const imageUrlsFromS3 = images
+        .map((img: any) => {
+          const keyOrUrl =
+            typeof img === 'string'
+              ? img
+              : img?.s3Key ??
+                img?.s3_key ??
+                img?.imageKey ??
+                img?.image_key ??
+                img?.key ??
+                img?.imageUrl ??
+                img?.image_url ??
+                img?.url ??
+                img?.filePath ??
+                img?.file_path ??
+                (typeof img?.image === 'string' ? img.image : img?.image?.url ?? img?.image?.imageKey ?? img?.image?.s3Key);
+          return toS3ImageUrl(keyOrUrl);
+        })
+        .filter((url: string | null): url is string => url != null);
+      const firstImageUrl =
+        imageUrlsFromS3[0] ??
+        toS3ImageUrl(backendResponse.mainImageKey) ??
+        backendResponse.thumbnailImageUrl ??
+        backendResponse.imageUrl ??
+        null;
+      const imageUrls = imageUrlsFromS3.length > 0 ? imageUrlsFromS3 : firstImageUrl ? [firstImageUrl] : null;
+      const imageUrl = firstImageUrl;
+      const thumbnailUrl = firstImageUrl;
 
       return {
         id: backendResponse.auctionId ?? backendResponse.id ?? 0,
@@ -748,12 +795,20 @@ export const auctionApi = {
         body: formData,
       });
 
-      // 백엔드 AuctionResponseDto -> 프론트 AuctionResponse 매핑
+      // 백엔드 응답: images[].s3Key → S3 풀 URL로 변환
       const images = backendResponse.images ?? [];
-      const firstImageUrl = images[0]?.imageUrl ?? images[0]?.url ?? images[0]?.image_url ?? null;
-      const thumbnailUrl = backendResponse.thumbnailImageUrl ?? backendResponse.thumbnail_url ?? firstImageUrl;
-      const imageUrl = backendResponse.imageUrl ?? thumbnailUrl ?? firstImageUrl;
-      const imageUrls = backendResponse.imageUrls ?? (images.length ? images.map((img: any) => img.imageUrl ?? img.url ?? img.image_url).filter(Boolean) : null) ?? (imageUrl ? [imageUrl] : null);
+      const imageUrlsFromS3 = images
+        .map((img: any) => toS3ImageUrl(img.s3Key ?? img.imageKey ?? img.imageUrl ?? img.url ?? img.image_url))
+        .filter((url: string | null): url is string => url != null);
+      const firstImageUrl =
+        imageUrlsFromS3[0] ??
+        toS3ImageUrl(backendResponse.mainImageKey) ??
+        backendResponse.thumbnailImageUrl ??
+        backendResponse.imageUrl ??
+        null;
+      const imageUrls = imageUrlsFromS3.length > 0 ? imageUrlsFromS3 : firstImageUrl ? [firstImageUrl] : null;
+      const imageUrl = firstImageUrl;
+      const thumbnailUrl = firstImageUrl;
 
       return {
         id: backendResponse.auctionId ?? backendResponse.id ?? 0,
@@ -973,20 +1028,28 @@ export const auctionApi = {
         method: 'GET',
       });
 
-      return backendResponse.map((auction: any) => ({
-        id: auction.id || 0,
-        title: auction.title || '',
-        thumbnailImageUrl: auction.thumbnailImageUrl || auction.thumbnail_url || null,
-        startPrice: auction.startPrice || auction.start_price || 0,
-        currentPrice: auction.currentPrice || auction.current_price || 0,
-        bidStep: auction.bidStep || auction.bid_step || 0,
-        status: auction.status || 'SCHEDULED',
-        startAt: auction.startAt || auction.start_at || '',
-        endAt: auction.endAt || auction.end_at || '',
-        bidCount: auction.bidCount || auction.bid_count || 0,
-        categoryPath: auction.categoryPath || auction.category_path || null,
-        summary: auction.summary || null,
-      }));
+      return backendResponse.map((auction: any) => {
+        const mainUrl =
+          toS3ImageUrl(auction.mainImageKey) ??
+          auction.thumbnailImageUrl ??
+          auction.thumbnail_url ??
+          (auction.images?.[0] ? toS3ImageUrl(auction.images[0].s3Key ?? auction.images[0].imageKey ?? auction.images[0].imageUrl) ?? null : null);
+        return {
+          id: auction.auctionId ?? auction.id ?? 0,
+          title: auction.title || '',
+          thumbnailImageUrl: mainUrl,
+          imageUrl: mainUrl,
+          startPrice: auction.startPrice || auction.start_price || 0,
+          currentPrice: auction.currentPrice || auction.current_price || 0,
+          bidStep: auction.bidStep || auction.bid_step || 0,
+          status: auction.auctionStatus ?? auction.status ?? 'SCHEDULED',
+          startAt: auction.startAt ?? auction.start_at ?? '',
+          endAt: auction.endAt ?? auction.end_at ?? '',
+          bidCount: auction.bidCount ?? auction.bid_count ?? 0,
+          categoryPath: auction.categoryPath ?? auction.category_path ?? null,
+          summary: auction.summary ?? null,
+        };
+      });
     } catch (error) {
       console.error('경매 검색 실패:', error);
       throw error;
@@ -1023,20 +1086,28 @@ export const userApi = {
           profileImageUrl: null,
           phone: null,
         },
-        auctions: (backendResponse.auctions || []).map((auction: any) => ({
-          id: auction.id || 0,
-          title: auction.title || '',
-          thumbnailImageUrl: auction.thumbnailImageUrl || auction.thumbnail_url || null,
-          startPrice: auction.startPrice || auction.start_price || 0,
-          currentPrice: auction.currentPrice || auction.current_price || 0,
-          bidStep: auction.bidStep || auction.bid_step || 0,
-          status: auction.status || 'SCHEDULED',
-          startAt: auction.startAt || auction.start_at || '',
-          endAt: auction.endAt || auction.end_at || '',
-          bidCount: auction.bidCount || auction.bid_count || 0,
-          categoryPath: auction.categoryPath || auction.category_path || null,
-          summary: auction.summary || null,
-        })),
+        auctions: (backendResponse.auctions || []).map((auction: any) => {
+          const mainUrl =
+            toS3ImageUrl(auction.mainImageKey) ??
+            auction.thumbnailImageUrl ??
+            auction.thumbnail_url ??
+            (auction.images?.[0] ? toS3ImageUrl(auction.images[0].s3Key ?? auction.images[0].imageKey ?? auction.images[0].imageUrl) ?? null : null);
+          return {
+            id: auction.auctionId ?? auction.id ?? 0,
+            title: auction.title || '',
+            thumbnailImageUrl: mainUrl,
+            imageUrl: mainUrl,
+            startPrice: auction.startPrice || auction.start_price || 0,
+            currentPrice: auction.currentPrice || auction.current_price || 0,
+            bidStep: auction.bidStep || auction.bid_step || 0,
+            status: auction.auctionStatus ?? auction.status ?? 'SCHEDULED',
+            startAt: auction.startAt ?? auction.start_at ?? '',
+            endAt: auction.endAt ?? auction.end_at ?? '',
+            bidCount: auction.bidCount ?? auction.bid_count ?? 0,
+            categoryPath: auction.categoryPath ?? auction.category_path ?? null,
+            summary: auction.summary ?? null,
+          };
+        }),
         myBids: await Promise.all((backendResponse.myBids || []).map(async (bid: any) => {
           let auction: AuctionResponse;
           if (bid.auction) {

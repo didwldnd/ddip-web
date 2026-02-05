@@ -466,20 +466,25 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
           <div className="lg:col-span-2">
             {/* Hero image gallery */}
             {(() => {
-              const images = auction.imageUrls && auction.imageUrls.length > 0 
-                ? auction.imageUrls 
-                : auction.imageUrl 
-                  ? [auction.imageUrl] 
-                  : ["/placeholder.svg"]
+              const images = auction.imageUrls && auction.imageUrls.length > 0
+                ? auction.imageUrls
+                : auction.imageUrl
+                  ? [auction.imageUrl]
+                  : auction.thumbnailImageUrl
+                    ? [auction.thumbnailImageUrl]
+                    : ["/placeholder.svg"]
+              const currentSrc = images[selectedImageIndex] || "/placeholder.svg"
+              const isExternalUrl = currentSrc.startsWith("http://") || currentSrc.startsWith("https://")
               const hasMultipleImages = images.length > 1
 
               return (
                 <div className="relative mb-6 aspect-video overflow-hidden rounded-xl bg-muted">
                   <Image
-                    src={images[selectedImageIndex] || "/placeholder.svg"}
+                    src={currentSrc}
                     alt={auction.title}
                     fill
                     className="object-cover"
+                    unoptimized={isExternalUrl}
                   />
                   
                   {/* 이미지 네비게이션 버튼 */}
