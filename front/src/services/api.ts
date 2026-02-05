@@ -37,10 +37,13 @@ async function apiRequest<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const token = tokenStorage.getAccessToken();
+  const isFormData = options.body instanceof FormData;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
     ...(options.headers as Record<string, string> || {}),
   };
+  // FormData 사용 시 Content-Type은 브라우저가 boundary 포함해 설정하므로 제거
+  if (isFormData && 'Content-Type' in headers) delete headers['Content-Type'];
 
   if (token) {
     // 토큰 앞뒤 공백 제거 및 Bearer 형식 확인
@@ -598,7 +601,7 @@ export const projectApi = {
 export const auctionApi = {
   /**
    * 경매 목록 조회
-   * GET /api/auctions
+   * GET /api/auction
    */
   getAuctions: async (params?: {
     status?: AuctionStatus;
@@ -611,24 +614,24 @@ export const auctionApi = {
       if (params?.page) queryParams.append('page', params.page.toString());
       if (params?.limit) queryParams.append('limit', params.limit.toString());
 
-      const endpoint = `/api/auctions${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+      const endpoint = `/api/auction${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
       const backendResponse = await apiRequest<AuctionSummary[]>(endpoint, {
         method: 'GET',
       });
 
       return backendResponse.map((auction: any) => ({
-        id: auction.id || 0,
+        id: auction.auctionId ?? auction.id ?? 0,
         title: auction.title || '',
         thumbnailImageUrl: auction.thumbnailImageUrl || auction.thumbnail_url || null,
         startPrice: auction.startPrice || auction.start_price || 0,
         currentPrice: auction.currentPrice || auction.current_price || 0,
         bidStep: auction.bidStep || auction.bid_step || 0,
-        status: auction.status || 'SCHEDULED',
-        startAt: auction.startAt || auction.start_at || '',
-        endAt: auction.endAt || auction.end_at || '',
-        bidCount: auction.bidCount || auction.bid_count || 0,
-        categoryPath: auction.categoryPath || auction.category_path || null,
-        summary: auction.summary || null,
+        status: auction.auctionStatus ?? auction.status ?? 'SCHEDULED',
+        startAt: auction.startAt ?? auction.start_at ?? '',
+        endAt: auction.endAt ?? auction.end_at ?? '',
+        bidCount: auction.bidCount ?? auction.bid_count ?? 0,
+        categoryPath: auction.categoryPath ?? auction.category_path ?? null,
+        summary: auction.summary ?? null,
       }));
     } catch (error) {
       console.error('경매 목록 조회 실패:', error);
@@ -638,21 +641,23 @@ export const auctionApi = {
 
   /**
    * 경매 상세 조회
-   * GET /api/auctions/{id}
+   * GET /api/auction/{id}
    */
   getAuction: async (id: number): Promise<AuctionResponse> => {
     try {
-      const backendResponse = await apiRequest<any>(`/api/auctions/${id}`, {
+      const backendResponse = await apiRequest<any>(`/api/auction/${id}`, {
         method: 'GET',
       });
 
-      // 백엔드 응답을 프론트엔드 타입으로 변환
-      const thumbnailUrl = backendResponse.thumbnailImageUrl || backendResponse.thumbnail_url || null;
-      const imageUrl = backendResponse.imageUrl || thumbnailUrl || null;
-      const imageUrls = backendResponse.imageUrls || (imageUrl ? [imageUrl] : null);
+      // 백엔드 AuctionResponseDto 매핑 (auctionId, auctionStatus, images)
+      const images = backendResponse.images ?? [];
+      const firstImageUrl = images[0]?.imageUrl ?? images[0]?.url ?? images[0]?.image_url ?? null;
+      const thumbnailUrl = backendResponse.thumbnailImageUrl ?? backendResponse.thumbnail_url ?? firstImageUrl;
+      const imageUrl = backendResponse.imageUrl ?? thumbnailUrl ?? firstImageUrl;
+      const imageUrls = backendResponse.imageUrls ?? (images.length ? images.map((img: any) => img.imageUrl ?? img.url ?? img.image_url).filter(Boolean) : null) ?? (imageUrl ? [imageUrl] : null);
 
       return {
-        id: backendResponse.id || 0,
+        id: backendResponse.auctionId ?? backendResponse.id ?? 0,
         seller: backendResponse.seller ? {
           id: backendResponse.seller.id || 0,
           email: backendResponse.seller.email || null,
@@ -676,8 +681,8 @@ export const auctionApi = {
         startPrice: backendResponse.startPrice || backendResponse.start_price || 0,
         currentPrice: backendResponse.currentPrice || backendResponse.current_price || 0,
         bidStep: backendResponse.bidStep || backendResponse.bid_step || 0,
-        buyoutPrice: backendResponse.buyoutPrice || backendResponse.buyout_price || null,
-        status: backendResponse.status || 'SCHEDULED',
+        buyoutPrice: backendResponse.buyoutPrice ?? backendResponse.buyout_price ?? null,
+        status: backendResponse.auctionStatus ?? backendResponse.status ?? 'SCHEDULED',
         startAt: backendResponse.startAt || backendResponse.start_at || '',
         endAt: backendResponse.endAt || backendResponse.end_at || '',
         winner: backendResponse.winner ? {
@@ -722,36 +727,84 @@ export const auctionApi = {
   },
 
   /**
-   * 경매 생성
-   * POST /api/auctions
+   * 경매 생성 (multipart/form-data: file 목록 + data JSON, 백엔드 S3 업로드)
+   * POST /api/auction
    */
-  createAuction: async (data: AuctionCreateRequest): Promise<AuctionResponse> => {
+  createAuction: async (files: File[], data: AuctionCreateRequest): Promise<AuctionResponse> => {
     try {
-      const requestData = {
+      const formData = new FormData();
+      files.forEach((file) => formData.append('file', file));
+      const dataPart: { title: string; description: string; startPrice: number; bidStep: number; endAt: string } = {
         title: data.title,
         description: data.description,
         startPrice: data.startPrice,
         bidStep: data.bidStep,
         endAt: data.endAt,
-        thumbnailImageUrl: data.thumbnailImageUrl || null,
-        categoryPath: data.categoryPath || null,
-        tags: data.tags || null,
-        summary: data.summary || null,
       };
+      formData.append('data', new Blob([JSON.stringify(dataPart)], { type: 'application/json' }));
 
-      console.log('경매 생성 요청:', requestData);
-
-      const auctionId = await apiRequest<number>('/api/auctions', {
+      const backendResponse = await apiRequest<any>('/api/auction', {
         method: 'POST',
-        body: JSON.stringify(requestData),
+        body: formData,
       });
 
-      console.log('경매 생성 성공, ID:', auctionId);
+      // 백엔드 AuctionResponseDto -> 프론트 AuctionResponse 매핑
+      const images = backendResponse.images ?? [];
+      const firstImageUrl = images[0]?.imageUrl ?? images[0]?.url ?? images[0]?.image_url ?? null;
+      const thumbnailUrl = backendResponse.thumbnailImageUrl ?? backendResponse.thumbnail_url ?? firstImageUrl;
+      const imageUrl = backendResponse.imageUrl ?? thumbnailUrl ?? firstImageUrl;
+      const imageUrls = backendResponse.imageUrls ?? (images.length ? images.map((img: any) => img.imageUrl ?? img.url ?? img.image_url).filter(Boolean) : null) ?? (imageUrl ? [imageUrl] : null);
 
-      // 생성된 경매 ID로 상세 정보 조회
-      const createdAuction = await auctionApi.getAuction(auctionId);
-      
-      return createdAuction;
+      return {
+        id: backendResponse.auctionId ?? backendResponse.id ?? 0,
+        seller: backendResponse.seller ? {
+          id: backendResponse.seller.id ?? 0,
+          email: backendResponse.seller.email ?? null,
+          name: backendResponse.seller.name ?? backendResponse.seller.username ?? '',
+          nickname: backendResponse.seller.nickname ?? '',
+          profileImageUrl: backendResponse.seller.profileImageUrl ?? backendResponse.seller.profile_image_url ?? null,
+          phone: backendResponse.seller.phone ?? backendResponse.seller.phoneNumber ?? null,
+        } : { id: 0, email: null, name: '', nickname: '', profileImageUrl: null, phone: null },
+        title: backendResponse.title ?? '',
+        description: backendResponse.description ?? '',
+        thumbnailImageUrl: thumbnailUrl,
+        imageUrl,
+        imageUrls,
+        startPrice: backendResponse.startPrice ?? backendResponse.start_price ?? 0,
+        currentPrice: backendResponse.currentPrice ?? backendResponse.current_price ?? 0,
+        bidStep: backendResponse.bidStep ?? backendResponse.bid_step ?? 0,
+        buyoutPrice: backendResponse.buyoutPrice ?? backendResponse.buyout_price ?? null,
+        status: backendResponse.auctionStatus ?? backendResponse.status ?? 'SCHEDULED',
+        startAt: backendResponse.startAt ?? backendResponse.start_at ?? '',
+        endAt: backendResponse.endAt ?? backendResponse.end_at ?? '',
+        winner: backendResponse.winner ? {
+          id: backendResponse.winner.id ?? 0,
+          email: backendResponse.winner.email ?? null,
+          name: backendResponse.winner.name ?? backendResponse.winner.username ?? '',
+          nickname: backendResponse.winner.nickname ?? '',
+          profileImageUrl: backendResponse.winner.profileImageUrl ?? backendResponse.winner.profile_image_url ?? null,
+          phone: backendResponse.winner.phone ?? backendResponse.winner.phoneNumber ?? null,
+        } : null,
+        categoryPath: backendResponse.categoryPath ?? backendResponse.category_path ?? null,
+        tags: backendResponse.tags ?? null,
+        summary: backendResponse.summary ?? null,
+        bids: (backendResponse.bids ?? []).map((bid: any) => ({
+          id: bid.id ?? 0,
+          bidder: bid.bidder ? {
+            id: bid.bidder.id ?? 0,
+            email: bid.bidder.email ?? null,
+            name: bid.bidder.name ?? bid.bidder.username ?? '',
+            nickname: bid.bidder.nickname ?? '',
+            profileImageUrl: bid.bidder.profileImageUrl ?? bid.bidder.profile_image_url ?? null,
+            phone: bid.bidder.phone ?? bid.bidder.phoneNumber ?? null,
+          } : { id: 0, email: null, name: '', nickname: '', profileImageUrl: null, phone: null },
+          bidderNickname: bid.bidderNickname ?? bid.bidder_nickname ?? bid.bidder?.nickname ?? '',
+          bidPrice: bid.bidPrice ?? bid.bid_price ?? 0,
+          bidAt: bid.bidAt ?? bid.bid_at ?? bid.createdAt ?? '',
+        })),
+        createdAt: backendResponse.createdAt ?? backendResponse.created_at ?? '',
+        updatedAt: backendResponse.updatedAt ?? backendResponse.updated_at ?? '',
+      };
     } catch (error) {
       console.error('경매 생성 실패:', error);
       throw error;
@@ -760,7 +813,7 @@ export const auctionApi = {
 
   /**
    * 경매 수정
-   * PUT /api/auctions/{id}
+   * PUT /api/auction/{id}
    */
   updateAuction: async (
     id: number,
@@ -778,7 +831,7 @@ export const auctionApi = {
       if (data.tags !== undefined) requestData.tags = data.tags;
       if (data.summary !== undefined) requestData.summary = data.summary;
 
-      await apiRequest(`/api/auctions/${id}`, {
+      await apiRequest(`/api/auction/${id}`, {
         method: 'PUT',
         body: JSON.stringify(requestData),
       });
@@ -793,11 +846,11 @@ export const auctionApi = {
 
   /**
    * 경매 삭제
-   * DELETE /api/auctions/{id}
+   * DELETE /api/auction/{id}
    */
   deleteAuction: async (id: number): Promise<void> => {
     try {
-      await apiRequest(`/api/auctions/${id}`, {
+      await apiRequest(`/api/auction/${id}`, {
         method: 'DELETE',
       });
       console.log('경매 삭제 성공:', id);
@@ -816,7 +869,7 @@ export const auctionApi = {
     bidData: BidRequest
   ): Promise<BidResponse> => {
     try {
-      const backendResponse = await apiRequest<any>(`/api/auctions/${auctionId}/bids`, {
+      const backendResponse = await apiRequest<any>(`/api/auction/${auctionId}/bids`, {
         method: 'POST',
         body: JSON.stringify({
           price: bidData.price,
@@ -837,11 +890,11 @@ export const auctionApi = {
 
   /**
    * 특정 경매의 입찰 내역 조회
-   * GET /api/auctions/{auctionId}/bids
+   * GET /api/auction/{auctionId}/bids
    */
   getBidsByAuction: async (auctionId: number): Promise<BidSummary[]> => {
     try {
-      const backendResponse = await apiRequest<any[]>(`/api/auctions/${auctionId}/bids`, {
+      const backendResponse = await apiRequest<any[]>(`/api/auction/${auctionId}/bids`, {
         method: 'GET',
       });
 
@@ -874,11 +927,11 @@ export const auctionApi = {
 
   /**
    * 사용자의 입찰 내역 조회 (마이페이지용)
-   * GET /api/auctions/my-bids
+   * GET /api/auction/my-bids
    */
   getMyBids: async (): Promise<MyBidsSummary[]> => {
     try {
-      const backendResponse = await apiRequest<any[]>('/api/auctions/my-bids', {
+      const backendResponse = await apiRequest<any[]>('/api/auction/my-bids', {
         method: 'GET',
       });
 
@@ -903,7 +956,7 @@ export const auctionApi = {
 
   /**
    * 경매 검색
-   * GET /api/auctions/search?query={query}&status={status}&limit={limit}
+   * GET /api/auction/search?query={query}&status={status}&limit={limit}
    */
   searchAuctions: async (query: string, params?: {
     status?: AuctionStatus;
@@ -915,7 +968,7 @@ export const auctionApi = {
       if (params?.status) queryParams.append('status', params.status);
       if (params?.limit) queryParams.append('limit', params.limit.toString());
 
-      const endpoint = `/api/auctions/search?${queryParams.toString()}`;
+      const endpoint = `/api/auction/search?${queryParams.toString()}`;
       const backendResponse = await apiRequest<AuctionSummary[]>(endpoint, {
         method: 'GET',
       });

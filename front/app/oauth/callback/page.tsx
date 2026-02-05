@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, Suspense } from "react"
+import { useEffect, useState, Suspense, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Navigation } from "@/src/components/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card"
@@ -17,9 +17,12 @@ function OAuthCallbackContent() {
   const { refreshUser } = useAuth()
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const hasHandledRef = useRef(false)
 
   useEffect(() => {
     const handleCallback = async () => {
+      if (hasHandledRef.current) return
+      hasHandledRef.current = true
       try {
         // URL에서 access_token 파라미터 추출
         const accessToken = searchParams.get("access_token")
@@ -82,7 +85,7 @@ function OAuthCallbackContent() {
     }
 
     handleCallback()
-  }, [searchParams, router, refreshUser])
+  }, [router, refreshUser])
 
   return (
     <div className="min-h-screen bg-background">

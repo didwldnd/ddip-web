@@ -15,6 +15,7 @@ import { ProtectedRoute } from "@/src/components/protected-route"
 import { MultiImageUpload } from "@/src/components/multi-image-upload"
 import { auctionApi } from "@/src/services/api"
 import { auctionCreateSchema, AuctionCreateFormData } from "@/src/lib/validations"
+import { AuctionCreateRequest } from "@/src/types/api"
 import { toast } from "sonner"
 
 export default function CreateAuctionPage() {
@@ -52,39 +53,14 @@ export default function CreateAuctionPage() {
     try {
       setIsSubmitting(true)
 
-      // 이미지 파일들을 base64로 변환 (localStorage 저장용)
-      let imageUrls: string[] | null = null
-      if (imageFiles.length > 0) {
-        // Mock: 실제로는 FormData로 백엔드에 업로드
-        // localStorage 저장을 위해 base64로 변환 (크기 제한 적용)
-        imageUrls = await Promise.all(
-          imageFiles.map(
-            (file) =>
-              new Promise<string>((resolve, reject) => {
-                // 파일 크기 체크 (5MB 제한)
-                if (file.size > 5 * 1024 * 1024) {
-                  toast.error(`이미지 크기가 너무 큽니다: ${file.name} (최대 5MB)`)
-                  reject(new Error(`이미지 크기 초과: ${file.name}`))
-                  return
-                }
-                
-                const reader = new FileReader()
-                reader.onload = () => {
-                  const result = reader.result as string
-                  // base64 문자열 크기 체크 (약 2MB 제한)
-                  if (result.length > 2 * 1024 * 1024) {
-                    toast.warning(`이미지 ${file.name}의 크기가 큽니다. 저장 시 문제가 발생할 수 있습니다.`)
-                  }
-                  resolve(result)
-                }
-                reader.onerror = reject
-                reader.readAsDataURL(file)
-              })
-          )
-        )
+      // 이미지 파일 크기 검사 (5MB 제한, 백엔드 S3 업로드용)
+      for (const file of imageFiles) {
+        if (file.size > 5 * 1024 * 1024) {
+          toast.error(`이미지 크기가 너무 큽니다: ${file.name} (최대 5MB)`)
+          setIsSubmitting(false)
+          return
+        }
       }
-      // 첫 번째 이미지를 imageUrl로 설정 (하위 호환성)
-      const imageUrl = imageUrls && imageUrls.length > 0 ? imageUrls[0] : null
 
       // 날짜 유효성 검사 및 ISO 형식으로 변환
       if (!data.startAt || !data.endAt || data.startAt.trim() === "" || data.endAt.trim() === "") {
@@ -148,13 +124,9 @@ export default function CreateAuctionPage() {
         startPrice: data.startPrice,
         bidStep: data.bidStep,
         endAt: endDateTimeISO,
-        thumbnailImageUrl: imageUrl || null,
-        categoryPath: data.categoryPath || undefined,
-        tags: data.tags || undefined,
-        summary: data.summary || undefined,
       }
 
-      const createdAuction = await auctionApi.createAuction(auctionData)
+      const createdAuction = await auctionApi.createAuction(imageFiles, auctionData)
       toast.success("경매가 생성되었습니다!")
       router.push(`/auction/${createdAuction.id}`)
     } catch (error) {
