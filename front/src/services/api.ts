@@ -882,83 +882,115 @@ export const userApi = {
 // API 함수들 - 인증 관련
 export const authApi = {
   /**
-   * 로그인
+   * 로그인 — POST /api/users/login
+   * 응답: { "access_token": "..." } + Authorization 헤더
    */
   login: async (data: LoginRequest): Promise<AuthResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    
-    // Mock: 이메일과 비밀번호 검증 (실제로는 백엔드에서 처리)
-    if (data.email && data.password) {
-      const user = createMockUser(1, {
-        email: data.email,
-        name: '사용자',
-        nickname: 'nickname1',
-      });
-      
-      return {
-        accessToken: `mock-access-token-${Date.now()}`,
-        refreshToken: `mock-refresh-token-${Date.now()}`,
-        user,
-      };
-    }
-    
-    throw new Error('이메일 또는 비밀번호가 올바르지 않습니다');
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: data.email, password: data.password }),
+    });
+
+    if (!res.ok) throw new Error('이메일 또는 비밀번호가 올바르지 않습니다');
+
+    const body = await res.json();
+    const accessToken: string = body.access_token ?? res.headers.get('Authorization')?.replace('Bearer ', '') ?? '';
+
+    if (!accessToken) throw new Error('토큰을 받지 못했습니다');
+
+    // 유저 정보 조회
+    const userRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/me`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const userBody = userRes.ok ? await userRes.json() : null;
+
+    const user: UserResponse = {
+      id: userBody?.id ?? 0,
+      email: userBody?.email ?? data.email,
+      name: userBody?.username ?? '',
+      nickname: userBody?.nickname ?? '',
+      profileImageUrl: null,
+      phone: userBody?.phoneNumber ?? null,
+    };
+
+    return { accessToken, user };
   },
 
   /**
-   * 회원가입
+   * 회원가입 — POST /api/users/register → 자동 로그인
    */
   register: async (data: RegisterRequest): Promise<AuthResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    
-    // Mock: 새 사용자 생성
-    const user = createMockUser(Date.now(), {
-      email: data.email,
-      name: data.name,
-      nickname: data.nickname,
-      phone: data.phone || null,
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: data.email,
+        password: data.password,
+        username: data.name,
+        nickname: data.nickname,
+        phoneNumber: data.phone ?? '',
+      }),
     });
-    
-    return {
-      accessToken: `mock-access-token-${Date.now()}`,
-      refreshToken: `mock-refresh-token-${Date.now()}`,
-      user,
-    };
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.message ?? '회원가입에 실패했습니다');
+    }
+
+    // 회원가입 후 자동 로그인
+    return authApi.login({ email: data.email, password: data.password });
   },
 
   /**
    * 로그아웃
    */
   logout: async (): Promise<void> => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    // Mock: 토큰 삭제는 클라이언트에서 처리
+    const token = tokenStorage.getAccessToken();
+    if (token) {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => {});
+    }
   },
 
   /**
    * 토큰 갱신
    */
-  refreshToken: async (refreshToken: string): Promise<AuthResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    
-    const user = createMockUser(1);
-    return {
-      accessToken: `mock-access-token-${Date.now()}`,
-      refreshToken: `mock-refresh-token-${Date.now()}`,
-      user,
-    };
+  refreshToken: async (_refreshToken: string): Promise<AuthResponse> => {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/refresh-token`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+    if (!res.ok) throw new Error('토큰 갱신에 실패했습니다');
+    const body = await res.json();
+    const accessToken: string = body.newAccessToken ?? '';
+    const saved = tokenStorage.getUser();
+    if (!saved) throw new Error('사용자 정보가 없습니다');
+    return { accessToken, user: saved };
   },
 
   /**
-   * 현재 사용자 정보 조회 (토큰으로)
+   * 현재 사용자 정보 조회
    */
   getCurrentUser: async (): Promise<UserResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    const savedUser = tokenStorage.getUser();
-    if (savedUser) {
-      return savedUser;
-    }
-    // 토큰이 없으면 에러 발생 (실제로는 인증 필요)
-    throw new Error('로그인이 필요합니다');
+    const token = tokenStorage.getAccessToken();
+    if (!token) throw new Error('로그인이 필요합니다');
+
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('사용자 정보를 불러오지 못했습니다');
+    const body = await res.json();
+    return {
+      id: body.id,
+      email: body.email,
+      name: body.username,
+      nickname: body.nickname,
+      profileImageUrl: null,
+      phone: body.phoneNumber ?? null,
+    };
   },
 };
 

@@ -49,8 +49,8 @@ export default function RegisterPage() {
       return
     }
 
-    if (formData.password.length < 6) {
-      setError("비밀번호는 최소 6자 이상이어야 합니다")
+    if (!/(?=.*[0-9])(?=.*[a-z])(?=.*\W)(?=\S+$).{8,16}/.test(formData.password)) {
+      setError("비밀번호는 8~16자 영문 소문자, 숫자, 특수문자를 포함해야 합니다")
       return
     }
 
@@ -112,7 +112,7 @@ export default function RegisterPage() {
                   id="password"
                   name="password"
                   type="password"
-                  placeholder="최소 6자 이상"
+                  placeholder="8~16자, 영문 소문자+숫자+특수문자 포함"
                   value={formData.password}
                   onChange={handleChange}
                   disabled={isLoading}
