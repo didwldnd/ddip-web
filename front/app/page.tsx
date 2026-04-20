@@ -21,9 +21,10 @@ export default function HomePage() {
       try {
         setLoading(true)
         // 프로젝트와 경매 데이터를 동시에 로드
+        // 등록된 모든 프로젝트/경매 가져오기 (상태 필터 없이)
         const [projectsData, auctionsData] = await Promise.all([
-          projectApi.getProjects({ status: "OPEN", limit: 4 }),
-          auctionApi.getAuctions({ status: "RUNNING", limit: 4 }),
+          projectApi.getProjects({ limit: 20 }), // 최대 20개
+          auctionApi.getAuctions({ limit: 20 }), // 최대 20개
         ])
         setProjects(projectsData)
         setAuctions(auctionsData)
@@ -41,7 +42,10 @@ export default function HomePage() {
   const projectCards = projects.map((project) => {
     const endTime = new Date(project.endAt)
     const now = new Date()
-    const daysLeft = Math.ceil((endTime.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    // 날짜 유효성 검사
+    const daysLeft = isNaN(endTime.getTime()) 
+      ? 0 
+      : Math.ceil((endTime.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
     const backers = project.rewardTiers.reduce((sum, tier) => sum + tier.soldQuantity, 0)
 
     return {
@@ -61,7 +65,8 @@ export default function HomePage() {
   const auctionCards = auctions.map((auction) => {
     const endTime = new Date(auction.endAt)
     const now = new Date()
-    const distance = endTime.getTime() - now.getTime()
+    // 날짜 유효성 검사
+    const distance = isNaN(endTime.getTime()) ? 0 : endTime.getTime() - now.getTime()
 
     let timeLeft = "종료됨"
     if (distance > 0) {
@@ -155,7 +160,7 @@ export default function HomePage() {
         <div className="container mx-auto px-4">
           <div className="grid gap-8 md:grid-cols-4">
             <div>
-              <h3 className="mb-4 font-bold">FundIt</h3>
+              <h3 className="mb-4 font-bold">DDIP</h3>
               <p className="text-sm text-muted-foreground">혁신적인 아이디어와 특별한 제품을 만나는 공간</p>
             </div>
             <div>
@@ -184,7 +189,7 @@ export default function HomePage() {
             </div>
           </div>
           <div className="mt-8 border-t pt-8 text-center text-sm text-muted-foreground">
-            © 2026 FundIt. All rights reserved.
+            © 2026 DDIP. All rights reserved.
           </div>
         </div>
       </footer>

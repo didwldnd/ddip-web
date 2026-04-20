@@ -1,0 +1,18 @@
+{
+  "properties": [
+    {
+      "name": "solapi.api-key",
+      "type": "java.lang.String",
+      "description": "Description for solapi.api-key."
+    },
+    {
+      "name": "solapi.api-secret",
+      "type": "java.lang.String",
+      "description": "Description for solapi.api-secret."
+    },
+    {
+      "name": "solapi.from",
+      "type": "java.lang.String",
+      "description": "Description for solapi.from."
+    }
+  ] }

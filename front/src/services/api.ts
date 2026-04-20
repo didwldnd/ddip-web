@@ -3,7 +3,133 @@ import {
   ProjectResponse,
   AuctionResponse,
   RewardTierResponse,
+  LoginRequest,
+  RegisterRequest,
+  AuthResponse,
+  SupportRequest,
+  SupportResponse,
+  BidResponse,
+  UserType,
 } from '@/src/types/api';
+import { tokenStorage } from '@/src/lib/auth';
+
+// 인메모리 저장소 (Mock API용)
+const projectStore = new Map<number, ProjectResponse>();
+const auctionStore = new Map<number, AuctionResponse>();
+const supportStore = new Map<number, SupportResponse>();
+const bidStore = new Map<number, BidResponse>();
+
+// localStorage 키
+const PROJECT_STORE_KEY = 'ddip_projects';
+const AUCTION_STORE_KEY = 'ddip_auctions';
+const SUPPORT_STORE_KEY = 'ddip_supports';
+const BID_STORE_KEY = 'ddip_bids';
+
+// localStorage에서 데이터 로드
+function loadProjectsFromStorage(): void {
+  try {
+    const stored = localStorage.getItem(PROJECT_STORE_KEY);
+    if (stored) {
+      const projects = JSON.parse(stored) as ProjectResponse[];
+      projects.forEach(project => {
+        projectStore.set(project.id, project);
+      });
+      console.log(`localStorage에서 ${projects.length}개 프로젝트 로드됨`);
+    }
+  } catch (error) {
+    console.error('프로젝트 로드 실패:', error);
+  }
+}
+
+function loadAuctionsFromStorage(): void {
+  try {
+    const stored = localStorage.getItem(AUCTION_STORE_KEY);
+    if (stored) {
+      const auctions = JSON.parse(stored) as AuctionResponse[];
+      auctions.forEach(auction => {
+        auctionStore.set(auction.id, auction);
+      });
+      console.log(`localStorage에서 ${auctions.length}개 경매 로드됨`);
+    }
+  } catch (error) {
+    console.error('경매 로드 실패:', error);
+  }
+}
+
+// localStorage에 데이터 저장
+function saveProjectsToStorage(): void {
+  try {
+    const projects = Array.from(projectStore.values());
+    localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(projects));
+  } catch (error) {
+    console.error('프로젝트 저장 실패:', error);
+  }
+}
+
+function saveAuctionsToStorage(): void {
+  try {
+    const auctions = Array.from(auctionStore.values());
+    localStorage.setItem(AUCTION_STORE_KEY, JSON.stringify(auctions));
+  } catch (error) {
+    console.error('경매 저장 실패:', error);
+  }
+}
+
+function loadSupportsFromStorage(): void {
+  try {
+    const stored = localStorage.getItem(SUPPORT_STORE_KEY);
+    if (stored) {
+      const supports = JSON.parse(stored) as SupportResponse[];
+      supports.forEach(support => {
+        supportStore.set(support.id, support);
+      });
+      console.log(`localStorage에서 ${supports.length}개 후원 내역 로드됨`);
+    }
+  } catch (error) {
+    console.error('후원 내역 로드 실패:', error);
+  }
+}
+
+function saveSupportsToStorage(): void {
+  try {
+    const supports = Array.from(supportStore.values());
+    localStorage.setItem(SUPPORT_STORE_KEY, JSON.stringify(supports));
+  } catch (error) {
+    console.error('후원 내역 저장 실패:', error);
+  }
+}
+
+function loadBidsFromStorage(): void {
+  try {
+    const stored = localStorage.getItem(BID_STORE_KEY);
+    if (stored) {
+      const bids = JSON.parse(stored) as BidResponse[];
+      bids.forEach(bid => {
+        bidStore.set(bid.id, bid);
+      });
+      console.log(`localStorage에서 ${bids.length}개 입찰 내역 로드됨`);
+    }
+  } catch (error) {
+    console.error('입찰 내역 로드 실패:', error);
+  }
+}
+
+function saveBidsToStorage(): void {
+  try {
+    const bids = Array.from(bidStore.values());
+    localStorage.setItem(BID_STORE_KEY, JSON.stringify(bids));
+  } catch (error) {
+    console.error('입찰 내역 저장 실패:', error);
+  }
+}
+
+// 초기화 시 localStorage에서 로드
+if (typeof window !== 'undefined') {
+  loadProjectsFromStorage();
+  loadAuctionsFromStorage();
+  loadSupportsFromStorage();
+  loadBidsFromStorage();
+}
 
 // Mock 데이터 생성 함수들
 const createMockUser = (id: number, overrides?: Partial<UserResponse>): UserResponse => ({
@@ -15,6 +141,16 @@ const createMockUser = (id: number, overrides?: Partial<UserResponse>): UserResp
   phone: `010-${String(id).padStart(4, '0')}-${String(id * 2).padStart(4, '0')}`,
   ...overrides,
 });
+
+// 현재 로그인한 사용자 정보 가져오기
+function getCurrentUser(): UserResponse {
+  const savedUser = tokenStorage.getUser();
+  if (savedUser) {
+    return savedUser;
+  }
+  // 사용자 정보가 없으면 기본 Mock 사용자 반환 (비로그인 상태)
+  return createMockUser(1);
+}
 
 const createMockRewardTier = (
   id: number,
@@ -49,6 +185,82 @@ const createMockProject = (
   ];
   const status = statuses[id % statuses.length];
 
+  // 기본 날짜 생성 (안전하게)
+  // id가 타임스탬프처럼 큰 숫자면 작은 값으로 변환
+  const normalizedId = id > 1000000 ? id % 1000 : id
+  const defaultStartDate = new Date(Date.now() - normalizedId * 86400000)
+  const defaultEndDate = new Date(Date.now() + (30 - normalizedId) * 86400000)
+  const defaultCreatedAt = new Date(Date.now() - (normalizedId + 10) * 86400000)
+
+  // overrides의 날짜가 유효한지 검증
+  // 이미 ISO 문자열이면 그대로 사용, 아니면 파싱 후 변환
+  let startAt: string
+  let endAt: string
+  let createdAt: string
+
+  if (overrides?.startAt) {
+    // 이미 ISO 문자열 형식인지 확인
+    if (typeof overrides.startAt === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(overrides.startAt)) {
+      // 이미 ISO 형식이면 그대로 사용
+      const date = new Date(overrides.startAt)
+      if (isNaN(date.getTime())) {
+        console.error("Invalid startAt ISO string:", overrides.startAt)
+        startAt = defaultStartDate.toISOString()
+      } else {
+        startAt = overrides.startAt // 이미 ISO 형식이므로 그대로 사용
+      }
+    } else {
+      // 다른 형식이면 파싱 후 변환
+      const date = new Date(overrides.startAt)
+      if (isNaN(date.getTime())) {
+        console.error("Invalid startAt in overrides:", overrides.startAt)
+        startAt = defaultStartDate.toISOString()
+      } else {
+        startAt = date.toISOString()
+      }
+    }
+  } else {
+    startAt = defaultStartDate.toISOString()
+  }
+
+  if (overrides?.endAt) {
+    // 이미 ISO 문자열 형식인지 확인
+    if (typeof overrides.endAt === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(overrides.endAt)) {
+      // 이미 ISO 형식이면 그대로 사용
+      const date = new Date(overrides.endAt)
+      if (isNaN(date.getTime())) {
+        console.error("Invalid endAt ISO string:", overrides.endAt)
+        endAt = defaultEndDate.toISOString()
+      } else {
+        endAt = overrides.endAt // 이미 ISO 형식이므로 그대로 사용
+      }
+    } else {
+      // 다른 형식이면 파싱 후 변환
+      const date = new Date(overrides.endAt)
+      if (isNaN(date.getTime())) {
+        console.error("Invalid endAt in overrides:", overrides.endAt)
+        endAt = defaultEndDate.toISOString()
+      } else {
+        endAt = date.toISOString()
+      }
+    }
+  } else {
+    endAt = defaultEndDate.toISOString()
+  }
+
+  if (overrides?.createdAt) {
+    const date = new Date(overrides.createdAt)
+    if (isNaN(date.getTime())) {
+      console.error("Invalid createdAt in overrides:", overrides.createdAt)
+      createdAt = defaultCreatedAt.toISOString()
+    } else {
+      createdAt = date.toISOString()
+    }
+  } else {
+    createdAt = defaultCreatedAt.toISOString()
+  }
+
+  // overrides를 먼저 스프레드하고, 검증된 날짜로 덮어쓰기
   return {
     id,
     creator,
@@ -58,11 +270,12 @@ const createMockProject = (
     targetAmount: 1000000,
     currentAmount: Math.floor(Math.random() * 1000000),
     status,
-    startAt: new Date(Date.now() - id * 86400000).toISOString(),
-    endAt: new Date(Date.now() + (30 - id) * 86400000).toISOString(),
     rewardTiers,
-    createdAt: new Date(Date.now() - (id + 10) * 86400000).toISOString(),
     ...overrides,
+    // 날짜는 위에서 검증된 값으로 덮어쓰기 (overrides의 날짜가 유효하지 않을 수 있으므로)
+    startAt,
+    endAt,
+    createdAt,
   };
 };
 
@@ -80,6 +293,69 @@ const createMockAuction = (
   const status = statuses[id % statuses.length];
   const winner = status === 'ENDED' ? createMockUser(id + 100) : null;
 
+  // 기본 날짜 생성 (안전하게)
+  // overrides에 날짜가 없을 때만 기본 날짜 생성
+  // id가 타임스탬프처럼 큰 숫자면 작은 값으로 변환
+  const normalizedId = id > 1000000 ? id % 1000 : id
+  const defaultStartDate = new Date(Date.now() - normalizedId * 86400000)
+  const defaultEndDate = new Date(Date.now() + (7 - normalizedId) * 86400000)
+
+  // overrides의 날짜가 유효한지 검증
+  // 이미 ISO 문자열이면 그대로 사용, 아니면 파싱 후 변환
+  let startAt: string
+  let endAt: string
+
+  if (overrides?.startAt) {
+    // 이미 ISO 문자열 형식인지 확인
+    if (typeof overrides.startAt === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(overrides.startAt)) {
+      // 이미 ISO 형식이면 그대로 사용
+      const date = new Date(overrides.startAt)
+      if (isNaN(date.getTime())) {
+        console.error("Invalid startAt ISO string:", overrides.startAt)
+        startAt = defaultStartDate.toISOString()
+      } else {
+        startAt = overrides.startAt // 이미 ISO 형식이므로 그대로 사용
+      }
+    } else {
+      // 다른 형식이면 파싱 후 변환
+      const date = new Date(overrides.startAt)
+      if (isNaN(date.getTime())) {
+        console.error("Invalid startAt in overrides:", overrides.startAt)
+        startAt = defaultStartDate.toISOString()
+      } else {
+        startAt = date.toISOString()
+      }
+    }
+  } else {
+    startAt = defaultStartDate.toISOString()
+  }
+
+  if (overrides?.endAt) {
+    // 이미 ISO 문자열 형식인지 확인
+    if (typeof overrides.endAt === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(overrides.endAt)) {
+      // 이미 ISO 형식이면 그대로 사용
+      const date = new Date(overrides.endAt)
+      if (isNaN(date.getTime())) {
+        console.error("Invalid endAt ISO string:", overrides.endAt)
+        endAt = defaultEndDate.toISOString()
+      } else {
+        endAt = overrides.endAt // 이미 ISO 형식이므로 그대로 사용
+      }
+    } else {
+      // 다른 형식이면 파싱 후 변환
+      const date = new Date(overrides.endAt)
+      if (isNaN(date.getTime())) {
+        console.error("Invalid endAt in overrides:", overrides.endAt)
+        endAt = defaultEndDate.toISOString()
+      } else {
+        endAt = date.toISOString()
+      }
+    }
+  } else {
+    endAt = defaultEndDate.toISOString()
+  }
+
+  // overrides를 먼저 스프레드하고, 검증된 날짜로 덮어쓰기
   return {
     id,
     seller,
@@ -91,10 +367,11 @@ const createMockAuction = (
     bidStep: 5000,
     buyoutPrice: id % 2 === 0 ? 200000 : null,
     status,
-    startAt: new Date(Date.now() - id * 86400000).toISOString(),
-    endAt: new Date(Date.now() + (7 - id) * 86400000).toISOString(),
     winner,
     ...overrides,
+    // 날짜는 위에서 검증된 값으로 덮어쓰기 (overrides의 날짜가 유효하지 않을 수 있으므로)
+    startAt,
+    endAt,
   };
 };
 
@@ -110,15 +387,21 @@ export const projectApi = {
   }): Promise<ProjectResponse[]> => {
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    const projects: ProjectResponse[] = [];
-    const limit = params?.limit || 10;
-    for (let i = 1; i <= limit; i++) {
-      const project = createMockProject(i);
-      if (!params?.status || project.status === params.status) {
-        projects.push(project);
-      }
+    // localStorage에서 저장된 프로젝트 가져오기
+    const storedProjects = Array.from(projectStore.values());
+    
+    // 상태 필터링
+    let filteredProjects = storedProjects;
+    if (params?.status) {
+      filteredProjects = storedProjects.filter(project => project.status === params.status);
     }
-    return projects;
+    
+    // 최신순 정렬 (ID가 타임스탬프이므로 큰 순서대로)
+    filteredProjects.sort((a, b) => b.id - a.id);
+    
+    // limit 적용
+    const limit = params?.limit || 10;
+    return filteredProjects.slice(0, limit);
   },
 
   /**
@@ -126,6 +409,16 @@ export const projectApi = {
    */
   getProject: async (id: number): Promise<ProjectResponse> => {
     await new Promise((resolve) => setTimeout(resolve, 300));
+    
+    // 저장된 프로젝트가 있으면 반환
+    const storedProject = projectStore.get(id);
+    if (storedProject) {
+      console.log("저장된 프로젝트 반환:", { id, title: storedProject.title });
+      return storedProject;
+    }
+    
+    // 없으면 기본 Mock 데이터 반환
+    console.log("기본 Mock 프로젝트 반환:", id);
     return createMockProject(id);
   },
 
@@ -136,11 +429,52 @@ export const projectApi = {
     data: Omit<ProjectResponse, 'id' | 'creator' | 'createdAt'>
   ): Promise<ProjectResponse> => {
     await new Promise((resolve) => setTimeout(resolve, 500));
-    return createMockProject(Date.now(), {
+    
+    // 날짜 유효성 검사 및 로깅
+    console.log("createProject received data:", {
+      startAt: data.startAt,
+      endAt: data.endAt,
+      startAtType: typeof data.startAt,
+      endAtType: typeof data.endAt
+    })
+    
+    // startAt과 endAt이 이미 ISO 문자열인지 확인
+    if (data.startAt && typeof data.startAt === 'string') {
+      const startDate = new Date(data.startAt)
+      if (isNaN(startDate.getTime())) {
+        console.error("Invalid startAt in createProject:", data.startAt)
+        throw new Error("유효하지 않은 시작일입니다")
+      }
+    }
+    
+    if (data.endAt && typeof data.endAt === 'string') {
+      const endDate = new Date(data.endAt)
+      if (isNaN(endDate.getTime())) {
+        console.error("Invalid endAt in createProject:", data.endAt)
+        throw new Error("유효하지 않은 종료일입니다")
+      }
+    }
+    
+    const projectId = Date.now();
+    const currentUser = getCurrentUser();
+    const result = createMockProject(projectId, {
       ...data,
-      creator: createMockUser(1),
+      creator: currentUser,
       createdAt: new Date().toISOString(),
     });
+    
+    // 생성한 프로젝트를 저장소에 저장
+    projectStore.set(projectId, result);
+    saveProjectsToStorage(); // localStorage에도 저장
+    
+    console.log("createProject result:", {
+      id: result.id,
+      title: result.title,
+      startAt: result.startAt,
+      endAt: result.endAt
+    })
+    
+    return result
   },
 
   /**
@@ -151,7 +485,19 @@ export const projectApi = {
     data: Partial<ProjectResponse>
   ): Promise<ProjectResponse> => {
     await new Promise((resolve) => setTimeout(resolve, 500));
-    return createMockProject(id, data);
+    
+    // 기존 프로젝트 가져오기
+    const existingProject = projectStore.get(id);
+    const updatedProject = createMockProject(id, {
+      ...existingProject,
+      ...data,
+    });
+    
+    // 저장소에 업데이트된 프로젝트 저장
+    projectStore.set(id, updatedProject);
+    saveProjectsToStorage(); // localStorage에도 저장
+    
+    return updatedProject;
   },
 
   /**
@@ -160,6 +506,98 @@ export const projectApi = {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   deleteProject: async (id: number): Promise<void> => {
     await new Promise((resolve) => setTimeout(resolve, 300));
+    // 저장소에서 프로젝트 삭제
+    projectStore.delete(id);
+    saveProjectsToStorage(); // localStorage에도 반영
+  },
+
+  /**
+   * 프로젝트 후원하기
+   */
+  supportProject: async (data: SupportRequest): Promise<SupportResponse> => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    
+    // 프로젝트 가져오기
+    const project = projectStore.get(data.projectId);
+    if (!project) {
+      throw new Error('프로젝트를 찾을 수 없습니다');
+    }
+
+    // 프로젝트 상태 확인
+    if (project.status !== 'OPEN') {
+      throw new Error('진행 중인 프로젝트에만 후원할 수 있습니다');
+    }
+
+    // 리워드 티어 찾기
+    const rewardTier = project.rewardTiers.find(tier => tier.id === data.rewardTierId);
+    if (!rewardTier) {
+      throw new Error('리워드 티어를 찾을 수 없습니다');
+    }
+
+    // 후원 금액 검증
+    if (data.amount < rewardTier.price) {
+      throw new Error(`최소 후원 금액은 ${rewardTier.price.toLocaleString()}원입니다`);
+    }
+
+    // 리워드 티어 한정 수량 확인
+    if (rewardTier.limitQuantity !== null && rewardTier.soldQuantity >= rewardTier.limitQuantity) {
+      throw new Error('해당 리워드 티어의 한정 수량이 모두 소진되었습니다');
+    }
+
+    // 목표 금액 초과 확인 (선택사항 - 경고만)
+    if (project.currentAmount + data.amount > project.targetAmount) {
+      console.warn('후원 금액이 목표 금액을 초과합니다');
+    }
+
+    // 현재 로그인한 사용자 정보 가져오기
+    const currentUser = getCurrentUser();
+
+    // 후원 내역 생성
+    const supportId = Date.now();
+    const support: SupportResponse = {
+      id: supportId,
+      projectId: data.projectId,
+      projectTitle: project.title,
+      rewardTierId: data.rewardTierId,
+      rewardTierTitle: rewardTier.title,
+      amount: data.amount,
+      supporter: currentUser,
+      createdAt: new Date().toISOString(),
+    };
+
+    // 후원 내역 저장
+    supportStore.set(supportId, support);
+    saveSupportsToStorage();
+
+    // 프로젝트 업데이트: 현재 금액 증가, 리워드 티어 판매 수량 증가
+    const updatedProject = {
+      ...project,
+      currentAmount: project.currentAmount + data.amount,
+      rewardTiers: project.rewardTiers.map(tier =>
+        tier.id === data.rewardTierId
+          ? { ...tier, soldQuantity: tier.soldQuantity + 1 }
+          : tier
+      ),
+    };
+
+    projectStore.set(data.projectId, updatedProject);
+    saveProjectsToStorage();
+
+    return support;
+  },
+
+  /**
+   * 사용자의 후원 내역 조회
+   */
+  getMySupports: async (userId?: number): Promise<SupportResponse[]> => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    
+    // Mock: userId가 없으면 모든 후원 내역 반환 (실제로는 인증된 사용자 ID 사용)
+    const supports = Array.from(supportStore.values());
+    if (userId) {
+      return supports.filter(support => support.supporter.id === userId);
+    }
+    return supports.sort((a, b) => b.id - a.id); // 최신순
   },
 };
 
@@ -175,15 +613,21 @@ export const auctionApi = {
   }): Promise<AuctionResponse[]> => {
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    const auctions: AuctionResponse[] = [];
-    const limit = params?.limit || 10;
-    for (let i = 1; i <= limit; i++) {
-      const auction = createMockAuction(i);
-      if (!params?.status || auction.status === params.status) {
-        auctions.push(auction);
-      }
+    // localStorage에서 저장된 경매 가져오기
+    const storedAuctions = Array.from(auctionStore.values());
+    
+    // 상태 필터링
+    let filteredAuctions = storedAuctions;
+    if (params?.status) {
+      filteredAuctions = storedAuctions.filter(auction => auction.status === params.status);
     }
-    return auctions;
+    
+    // 최신순 정렬 (ID가 타임스탬프이므로 큰 순서대로)
+    filteredAuctions.sort((a, b) => b.id - a.id);
+    
+    // limit 적용
+    const limit = params?.limit || 10;
+    return filteredAuctions.slice(0, limit);
   },
 
   /**
@@ -191,6 +635,16 @@ export const auctionApi = {
    */
   getAuction: async (id: number): Promise<AuctionResponse> => {
     await new Promise((resolve) => setTimeout(resolve, 300));
+    
+    // 저장된 경매가 있으면 반환
+    const storedAuction = auctionStore.get(id);
+    if (storedAuction) {
+      console.log("저장된 경매 반환:", { id, title: storedAuction.title });
+      return storedAuction;
+    }
+    
+    // 없으면 기본 Mock 데이터 반환
+    console.log("기본 Mock 경매 반환:", id);
     return createMockAuction(id);
   },
 
@@ -201,11 +655,52 @@ export const auctionApi = {
     data: Omit<AuctionResponse, 'id' | 'seller' | 'winner'>
   ): Promise<AuctionResponse> => {
     await new Promise((resolve) => setTimeout(resolve, 500));
-    return createMockAuction(Date.now(), {
+    
+    // 날짜 유효성 검사 및 로깅
+    console.log("createAuction received data:", {
+      startAt: data.startAt,
+      endAt: data.endAt,
+      startAtType: typeof data.startAt,
+      endAtType: typeof data.endAt
+    })
+    
+    // startAt과 endAt이 이미 ISO 문자열인지 확인
+    if (data.startAt && typeof data.startAt === 'string') {
+      const startDate = new Date(data.startAt)
+      if (isNaN(startDate.getTime())) {
+        console.error("Invalid startAt in createAuction:", data.startAt)
+        throw new Error("유효하지 않은 시작일입니다")
+      }
+    }
+    
+    if (data.endAt && typeof data.endAt === 'string') {
+      const endDate = new Date(data.endAt)
+      if (isNaN(endDate.getTime())) {
+        console.error("Invalid endAt in createAuction:", data.endAt)
+        throw new Error("유효하지 않은 종료일입니다")
+      }
+    }
+    
+    const auctionId = Date.now();
+    const currentUser = getCurrentUser();
+    const result = createMockAuction(auctionId, {
       ...data,
-      seller: createMockUser(1),
+      seller: currentUser,
       winner: null,
     });
+    
+    // 생성한 경매를 저장소에 저장
+    auctionStore.set(auctionId, result);
+    saveAuctionsToStorage(); // localStorage에도 저장
+    
+    console.log("createAuction result:", {
+      id: result.id,
+      title: result.title,
+      startAt: result.startAt,
+      endAt: result.endAt
+    })
+    
+    return result
   },
 
   /**
@@ -216,7 +711,19 @@ export const auctionApi = {
     data: Partial<AuctionResponse>
   ): Promise<AuctionResponse> => {
     await new Promise((resolve) => setTimeout(resolve, 500));
-    return createMockAuction(id, data);
+    
+    // 기존 경매 가져오기
+    const existingAuction = auctionStore.get(id);
+    const updatedAuction = createMockAuction(id, {
+      ...existingAuction,
+      ...data,
+    });
+    
+    // 저장소에 업데이트된 경매 저장
+    auctionStore.set(id, updatedAuction);
+    saveAuctionsToStorage(); // localStorage에도 저장
+    
+    return updatedAuction;
   },
 
   /**
@@ -225,6 +732,9 @@ export const auctionApi = {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   deleteAuction: async (id: number): Promise<void> => {
     await new Promise((resolve) => setTimeout(resolve, 300));
+    // 저장소에서 경매 삭제
+    auctionStore.delete(id);
+    saveAuctionsToStorage(); // localStorage에도 반영
   },
 
   /**
@@ -235,11 +745,107 @@ export const auctionApi = {
     bidAmount: number
   ): Promise<AuctionResponse> => {
     await new Promise((resolve) => setTimeout(resolve, 500));
-    const auction = createMockAuction(auctionId);
-    return {
+    
+    // 저장된 경매가 있으면 사용, 없으면 기본 Mock 데이터
+    const existingAuction = auctionStore.get(auctionId);
+    const auction = existingAuction || createMockAuction(auctionId);
+    
+    // 경매 상태 확인
+    if (auction.status !== 'RUNNING') {
+      throw new Error('진행 중인 경매에만 입찰할 수 있습니다');
+    }
+    
+    // 입찰 금액 검증
+    const minBidAmount = auction.currentPrice + auction.bidStep;
+    if (bidAmount < minBidAmount) {
+      throw new Error(`최소 입찰 금액은 ${minBidAmount.toLocaleString()}원입니다`);
+    }
+    
+    // 즉시 구매가가 있고 입찰 금액이 즉시 구매가 이상이면 즉시 구매 처리
+    if (auction.buyoutPrice && bidAmount >= auction.buyoutPrice) {
+      // 즉시 구매 처리
+      const currentUser = getCurrentUser();
+      const updatedAuction = {
+        ...auction,
+        currentPrice: auction.buyoutPrice,
+        status: 'ENDED' as const,
+        winner: currentUser,
+      };
+      auctionStore.set(auctionId, updatedAuction);
+      saveAuctionsToStorage();
+      
+      // 입찰 내역 저장
+      const bidId = Date.now();
+      const bid: BidResponse = {
+        id: bidId,
+        auctionId: auctionId,
+        auctionTitle: auction.title,
+        amount: auction.buyoutPrice,
+        bidder: currentUser,
+        createdAt: new Date().toISOString(),
+      };
+      bidStore.set(bidId, bid);
+      saveBidsToStorage();
+      
+      return updatedAuction;
+    }
+    
+    // 현재 로그인한 사용자 정보 가져오기
+    const currentUser = getCurrentUser();
+    
+    // 입찰 내역 생성
+    const bidId = Date.now();
+    const bid: BidResponse = {
+      id: bidId,
+      auctionId: auctionId,
+      auctionTitle: auction.title,
+      amount: bidAmount,
+      bidder: currentUser,
+      createdAt: new Date().toISOString(),
+    };
+    
+    // 입찰 내역 저장
+    bidStore.set(bidId, bid);
+    saveBidsToStorage();
+    
+    const updatedAuction = {
       ...auction,
       currentPrice: bidAmount,
     };
+    
+    // 입찰 후 업데이트된 경매를 저장소에 저장
+    auctionStore.set(auctionId, updatedAuction);
+    saveAuctionsToStorage(); // localStorage에도 저장
+    
+    return updatedAuction;
+  },
+
+  /**
+   * 특정 경매의 입찰 내역 조회
+   */
+  getBidsByAuction: async (auctionId: number): Promise<BidResponse[]> => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    
+    const bids = Array.from(bidStore.values());
+    const auctionBids = bids
+      .filter(bid => bid.auctionId === auctionId)
+      .sort((a, b) => b.id - a.id); // 최신순 (가장 최근 입찰이 위로)
+    
+    return auctionBids;
+  },
+
+  /**
+   * 사용자의 입찰 내역 조회
+   */
+  getMyBids: async (userId?: number): Promise<BidResponse[]> => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    
+    // Mock: userId가 없으면 모든 입찰 내역 반환 (실제로는 인증된 사용자 ID 사용)
+    const bids = Array.from(bidStore.values());
+    if (userId) {
+      return bids.filter(bid => bid.bidder.id === userId);
+    }
+    return bids.sort((a, b) => b.id - a.id); // 최신순
   },
 };
 
@@ -270,5 +876,114 @@ export const userApi = {
   ): Promise<UserResponse> => {
     await new Promise((resolve) => setTimeout(resolve, 500));
     return createMockUser(id, data);
+  },
+};
+
+// API 함수들 - 인증 관련
+export const authApi = {
+  /**
+   * 로그인
+   */
+  login: async (data: LoginRequest): Promise<AuthResponse> => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    
+    // Mock: 이메일과 비밀번호 검증 (실제로는 백엔드에서 처리)
+    if (data.email && data.password) {
+      const user = createMockUser(1, {
+        email: data.email,
+        name: '사용자',
+        nickname: 'nickname1',
+      });
+      
+      return {
+        accessToken: `mock-access-token-${Date.now()}`,
+        refreshToken: `mock-refresh-token-${Date.now()}`,
+        user,
+      };
+    }
+    
+    throw new Error('이메일 또는 비밀번호가 올바르지 않습니다');
+  },
+
+  /**
+   * 회원가입
+   */
+  register: async (data: RegisterRequest): Promise<AuthResponse> => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    
+    // Mock: 새 사용자 생성
+    const user = createMockUser(Date.now(), {
+      email: data.email,
+      name: data.name,
+      nickname: data.nickname,
+      phone: data.phone || null,
+    });
+    
+    return {
+      accessToken: `mock-access-token-${Date.now()}`,
+      refreshToken: `mock-refresh-token-${Date.now()}`,
+      user,
+    };
+  },
+
+  /**
+   * 로그아웃
+   */
+  logout: async (): Promise<void> => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    // Mock: 토큰 삭제는 클라이언트에서 처리
+  },
+
+  /**
+   * 토큰 갱신
+   */
+  refreshToken: async (refreshToken: string): Promise<AuthResponse> => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    
+    const user = createMockUser(1);
+    return {
+      accessToken: `mock-access-token-${Date.now()}`,
+      refreshToken: `mock-refresh-token-${Date.now()}`,
+      user,
+    };
+  },
+
+  /**
+   * 현재 사용자 정보 조회 (토큰으로)
+   */
+  getCurrentUser: async (): Promise<UserResponse> => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const savedUser = tokenStorage.getUser();
+    if (savedUser) {
+      return savedUser;
+    }
+    // 토큰이 없으면 에러 발생 (실제로는 인증 필요)
+    throw new Error('로그인이 필요합니다');
+  },
+};
+
+// API 함수들 - 설문 관련
+export const surveyApi = {
+  /**
+   * 설문 결과 저장 — PATCH /api/users/survey
+   */
+  saveSurvey: async (userType: UserType): Promise<void> => {
+    const token = tokenStorage.getAccessToken();
+    if (!token) throw new Error('로그인이 필요합니다');
+
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/survey`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ userType }),
+    });
+
+    if (!res.ok) throw new Error('설문 저장에 실패했습니다');
+
+    // 로컬 유저 정보도 업데이트
+    const saved = tokenStorage.getUser();
+    if (saved) tokenStorage.setUser({ ...saved, userType });
   },
 };

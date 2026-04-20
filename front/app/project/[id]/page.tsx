@@ -8,6 +8,9 @@ import { Separator } from "@/src/components/ui/separator"
 import { Avatar, AvatarFallback, AvatarImage } from "@/src/components/ui/avatar"
 import { Progress } from "@/src/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/src/components/ui/tabs"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/src/components/ui/dialog"
+import { Input } from "@/src/components/ui/input"
+import { Label } from "@/src/components/ui/label"
 import { Calendar, Clock, Heart, Share2, TrendingUp, MapPin, CheckCircle2, Loader2, AlertCircle } from "lucide-react"
 import Image from "next/image"
 import { useState, useEffect, use } from "react"
@@ -16,12 +19,20 @@ import { projectApi } from "@/src/services/api"
 import { ProjectResponse } from "@/src/types/api"
 import { RewardCard } from "@/src/components/reward-card"
 import { toast } from "sonner"
+import { useAuth } from "@/src/contexts/auth-context"
+import { ProtectedRoute } from "@/src/components/protected-route"
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
+  const { isAuthenticated } = useAuth()
   const [project, setProject] = useState<ProjectResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [supportDialogOpen, setSupportDialogOpen] = useState(false)
+  const [selectedRewardTier, setSelectedRewardTier] = useState<number | null>(null)
+  const [supportAmount, setSupportAmount] = useState<string>("")
+  const [isSupporting, setIsSupporting] = useState(false)
+  const [timeLeft, setTimeLeft] = useState<string>("")
 
   // 프로젝트 데이터 로드
   useEffect(() => {
@@ -33,9 +44,33 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         if (isNaN(projectId)) {
           throw new Error("유효하지 않은 프로젝트 ID입니다")
         }
+        console.log("프로젝트 로드 시작:", projectId)
         const data = await projectApi.getProject(projectId)
+        console.log("프로젝트 로드 성공:", {
+          id: data.id,
+          startAt: data.startAt,
+          endAt: data.endAt,
+          startAtType: typeof data.startAt,
+          endAtType: typeof data.endAt
+        })
+        
+        // 날짜 유효성 사전 검사
+        if (data.startAt && typeof data.startAt === 'string') {
+          const testStart = new Date(data.startAt)
+          if (isNaN(testStart.getTime())) {
+            console.error("로드된 프로젝트의 startAt이 유효하지 않음:", data.startAt)
+          }
+        }
+        if (data.endAt && typeof data.endAt === 'string') {
+          const testEnd = new Date(data.endAt)
+          if (isNaN(testEnd.getTime())) {
+            console.error("로드된 프로젝트의 endAt이 유효하지 않음:", data.endAt)
+          }
+        }
+        
         setProject(data)
       } catch (err) {
+        console.error("프로젝트 로드 에러:", err)
         setError(err instanceof Error ? err.message : "프로젝트 정보를 불러오는 중 오류가 발생했습니다")
         toast.error("프로젝트 정보를 불러오는데 실패했습니다")
       } finally {
@@ -45,6 +80,67 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
     loadProject()
   }, [id])
+
+  // 후원하기 핸들러
+  const handleSupport = async () => {
+    if (!project || !supportAmount) {
+      toast.error("후원 금액을 입력해주세요")
+      return
+    }
+
+    const amount = parseInt(supportAmount.replace(/,/g, ""), 10)
+    if (isNaN(amount) || amount < 1000) {
+      toast.error("최소 1,000원 이상 후원해주세요")
+      return
+    }
+
+    // 리워드 티어가 선택되지 않았으면 첫 번째 리워드 티어 사용
+    let rewardTierId = selectedRewardTier
+    if (rewardTierId === null || rewardTierId === undefined) {
+      if (project.rewardTiers.length > 0) {
+        rewardTierId = project.rewardTiers[0].id
+      } else {
+        toast.error("리워드 티어가 없습니다")
+        return
+      }
+    }
+
+    // rewardTierId가 유효한지 확인
+    const selectedTier = project.rewardTiers.find(t => t.id === rewardTierId)
+    if (!selectedTier) {
+      toast.error("유효하지 않은 리워드 티어입니다")
+      return
+    }
+
+    try {
+      setIsSupporting(true)
+      await projectApi.supportProject({
+        projectId: project.id,
+        rewardTierId: rewardTierId,
+        amount: amount,
+      })
+      
+      toast.success("후원이 완료되었습니다!")
+      setSupportDialogOpen(false)
+      setSupportAmount("")
+      setSelectedRewardTier(null)
+      
+      // 프로젝트 정보 새로고침
+      const updatedProject = await projectApi.getProject(project.id)
+      setProject(updatedProject)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "후원에 실패했습니다")
+    } finally {
+      setIsSupporting(false)
+    }
+  }
+
+  // 금액 포맷팅
+  const formatAmount = (value: string) => {
+    const num = value.replace(/,/g, "")
+    if (num === "") return ""
+    return parseInt(num, 10).toLocaleString()
+  }
 
   // 로딩 상태
   if (loading) {
@@ -76,11 +172,63 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     )
   }
 
-  const progress = (project.currentAmount / project.targetAmount) * 100
-  const startTime = new Date(project.startAt)
-  const endTime = new Date(project.endAt)
-  const now = new Date()
-  const daysLeft = Math.ceil((endTime.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+  // 날짜 파싱을 try-catch로 감싸서 에러 처리
+  let progress: number
+  let startTime: Date
+  let endTime: Date
+  let daysLeft: number
+  
+  try {
+    progress = (project.currentAmount / project.targetAmount) * 100
+    
+    // 날짜 파싱 (안전하게)
+    // 먼저 날짜 문자열 유효성 검사
+    if (!project.startAt || !project.endAt || typeof project.startAt !== 'string' || typeof project.endAt !== 'string') {
+      console.error("Missing or invalid date strings:", { startAt: project.startAt, endAt: project.endAt })
+      throw new Error("프로젝트 날짜 정보가 없습니다")
+    }
+
+    console.log("날짜 파싱 시작:", { startAt: project.startAt, endAt: project.endAt })
+    
+    startTime = new Date(project.startAt)
+    endTime = new Date(project.endAt)
+    const now = new Date()
+    
+    console.log("날짜 파싱 결과:", {
+      startTime: startTime.toString(),
+      endTime: endTime.toString(),
+      startTimeValid: !isNaN(startTime.getTime()),
+      endTimeValid: !isNaN(endTime.getTime())
+    })
+    
+    // Invalid Date 체크
+    if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
+      console.error("Invalid date in project:", { 
+        startAt: project.startAt, 
+        endAt: project.endAt,
+        startTime: startTime.toString(),
+        endTime: endTime.toString()
+      })
+      throw new Error("프로젝트 날짜 정보가 유효하지 않습니다")
+    }
+    
+    daysLeft = Math.ceil((endTime.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+  } catch (dateError) {
+    console.error("날짜 파싱 에러:", dateError)
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <main className="container mx-auto px-4 py-8">
+          <Alert variant="destructive">
+            <AlertCircle className="size-4" />
+            <AlertDescription>
+              {dateError instanceof Error ? dateError.message : "프로젝트 날짜 정보 처리 중 오류가 발생했습니다"}
+            </AlertDescription>
+          </Alert>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -222,7 +370,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                         <Clock className="size-4" />
                         <span className="text-xs">남은 시간</span>
                       </div>
-                      <p className="text-xl font-bold">{daysLeft > 0 ? `${daysLeft}일` : "종료"}</p>
+                      <p className="text-xl font-bold">{timeLeft || (daysLeft > 0 ? `${daysLeft}일` : "종료")}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -233,11 +381,29 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 <CardContent className="space-y-3 pt-6 text-sm">
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">프로젝트 시작</span>
-                    <span className="font-semibold">{startTime.toLocaleDateString("ko-KR")}</span>
+                    <span className="font-semibold">
+                      {isNaN(startTime.getTime()) 
+                        ? "날짜 오류" 
+                        : startTime.toLocaleDateString("ko-KR", { 
+                            year: "numeric", 
+                            month: "long", 
+                            day: "numeric" 
+                          })
+                      }
+                    </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">프로젝트 종료</span>
-                    <span className="font-semibold">{endTime.toLocaleDateString("ko-KR")}</span>
+                    <span className="font-semibold">
+                      {isNaN(endTime.getTime()) 
+                        ? "날짜 오류" 
+                        : endTime.toLocaleDateString("ko-KR", { 
+                            year: "numeric", 
+                            month: "long", 
+                            day: "numeric" 
+                          })
+                      }
+                    </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">상태</span>
@@ -263,6 +429,104 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   </div>
                 </CardContent>
               </Card>
+
+              {/* 후원하기 버튼 */}
+              {project.status === "OPEN" && (
+                <Dialog open={supportDialogOpen} onOpenChange={setSupportDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="lg" className="w-full" disabled={!isAuthenticated}>
+                      {isAuthenticated ? "후원하기" : "로그인 후 후원하기"}
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>프로젝트 후원하기</DialogTitle>
+                      <DialogDescription>
+                        리워드 티어를 선택하고 후원 금액을 입력해주세요
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      {/* 리워드 티어 선택 */}
+                      <div className="space-y-2">
+                        <Label>리워드 티어 선택 *</Label>
+                        <div className="space-y-2">
+                          {project.rewardTiers.map((tier) => (
+                            <button
+                              key={tier.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedRewardTier(tier.id)
+                                setSupportAmount(tier.price.toLocaleString())
+                              }}
+                              className={`w-full rounded-lg border p-4 text-left transition-colors ${
+                                selectedRewardTier === tier.id
+                                  ? "border-primary bg-primary/5"
+                                  : "border-border hover:bg-accent"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="font-semibold">{tier.title}</div>
+                                  <div className="text-sm text-muted-foreground">
+                                    {tier.price.toLocaleString()}원
+                                  </div>
+                                </div>
+                                {selectedRewardTier === tier.id && (
+                                  <CheckCircle2 className="size-5 text-primary" />
+                                )}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 후원 금액 입력 */}
+                      <div className="space-y-2">
+                        <Label htmlFor="supportAmount">후원 금액 (원) *</Label>
+                        <Input
+                          id="supportAmount"
+                          type="text"
+                          value={supportAmount}
+                          onChange={(e) => {
+                            const formatted = formatAmount(e.target.value)
+                            setSupportAmount(formatted)
+                          }}
+                          placeholder={selectedRewardTier 
+                            ? project.rewardTiers.find(t => t.id === selectedRewardTier)?.price.toLocaleString() || "10,000"
+                            : "10,000"
+                          }
+                        />
+                        {selectedRewardTier && (
+                          <p className="text-xs text-muted-foreground">
+                            선택한 리워드 티어: {project.rewardTiers.find(t => t.id === selectedRewardTier)?.price.toLocaleString()}원
+                          </p>
+                        )}
+                        {!selectedRewardTier && project.rewardTiers.length > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            리워드 티어를 선택하거나 직접 금액을 입력해주세요
+                          </p>
+                        )}
+                      </div>
+
+                      {/* 후원 버튼 */}
+                      <Button
+                        onClick={handleSupport}
+                        disabled={!supportAmount || isSupporting || (project.rewardTiers.length === 0)}
+                        className="w-full"
+                      >
+                        {isSupporting ? (
+                          <>
+                            <Loader2 className="mr-2 size-4 animate-spin" />
+                            후원 중...
+                          </>
+                        ) : (
+                          "후원하기"
+                        )}
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              )}
             </div>
           </div>
         </div>

@@ -1,8 +1,14 @@
+"use client"
+
 import { Card, CardContent, CardFooter, CardHeader } from "@/src/components/ui/card"
 import { Badge } from "@/src/components/ui/badge"
-import { Clock, Gavel } from "lucide-react"
+import { Button } from "@/src/components/ui/button"
+import { Clock, Gavel, Heart } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
+import { useState, useEffect } from "react"
+import { isInWishlist, toggleWishlist } from "@/src/lib/wishlist"
+import { toast } from "sonner"
 
 interface AuctionCardProps {
   id: string
@@ -27,6 +33,27 @@ export function AuctionCard({
   timeLeft,
   isLive,
 }: AuctionCardProps) {
+  const [isFavorite, setIsFavorite] = useState(false)
+
+  useEffect(() => {
+    setIsFavorite(isInWishlist(Number(id), "auction"))
+  }, [id])
+
+  const handleHeartClick = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    const auctionId = Number(id)
+    const newState = toggleWishlist(auctionId, "auction")
+    setIsFavorite(newState)
+    
+    if (newState) {
+      toast.success("위시리스트에 추가되었습니다")
+    } else {
+      toast.info("위시리스트에서 제거되었습니다")
+    }
+  }
+
   return (
     <Link href={`/auction/${id}`}>
       <Card className="group overflow-hidden transition-all hover:shadow-lg">
@@ -40,6 +67,18 @@ export function AuctionCard({
           <div className="absolute right-3 top-3 flex gap-2">
             <Badge className="bg-secondary text-secondary-foreground">{category}</Badge>
             {isLive && <Badge className="animate-pulse bg-destructive text-destructive-foreground">LIVE</Badge>}
+            <Button
+              variant="secondary"
+              size="icon"
+              className="size-8 rounded-full bg-background/80 backdrop-blur-sm hover:bg-background"
+              onClick={handleHeartClick}
+            >
+              <Heart
+                className={`size-4 transition-colors ${
+                  isFavorite ? "fill-red-500 text-red-500" : "text-muted-foreground"
+                }`}
+              />
+            </Button>
           </div>
         </div>
 

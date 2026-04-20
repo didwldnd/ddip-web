@@ -1,3 +1,6 @@
+// 성향 유형
+export type UserType = 'VALUE_ORIENTED' | 'PRACTICAL_ORIENTED' | 'TREND_ORIENTED';
+
 // 공통 사용자 타입
 export interface UserResponse {
   id: number;
@@ -6,6 +9,27 @@ export interface UserResponse {
   nickname: string;
   profileImageUrl: string | null;
   phone: string | null;
+  userType?: UserType | null;
+}
+
+// 인증 관련 타입
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  name: string;
+  nickname: string;
+  phone?: string;
+}
+
+export interface AuthResponse {
+  accessToken: string;
+  refreshToken?: string;
+  user: UserResponse;
 }
 
 // 프로젝트 관련 타입
@@ -31,6 +55,9 @@ export interface ProjectResponse {
   endAt: string;
   rewardTiers: RewardTierResponse[];
   createdAt: string;
+  categoryPath?: string | null;
+  tags?: string | null;
+  summary?: string | null;
 }
 
 // 경매 관련 타입
@@ -48,4 +75,32 @@ export interface AuctionResponse {
   startAt: string;
   endAt: string;
   winner: UserResponse | null;
+}
+
+// 후원 관련 타입
+export interface SupportRequest {
+  projectId: number;
+  rewardTierId: number;
+  amount: number;
+}
+
+export interface SupportResponse {
+  id: number;
+  projectId: number;
+  projectTitle: string;
+  rewardTierId: number;
+  rewardTierTitle: string;
+  amount: number;
+  supporter: UserResponse;
+  createdAt: string;
+}
+
+// 입찰 관련 타입
+export interface BidResponse {
+  id: number;
+  auctionId: number;
+  auctionTitle: string;
+  amount: number;
+  bidder: UserResponse;
+  createdAt: string;
 }
