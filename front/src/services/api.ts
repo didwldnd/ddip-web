@@ -1,603 +1,614 @@
 import {
   UserResponse,
+  UserPageResponse,
+  UserProfileResponse,
   ProjectResponse,
   AuctionResponse,
+  AuctionSummary,
+  AuctionCreateRequest,
+  AuctionStatus,
   RewardTierResponse,
   LoginRequest,
   RegisterRequest,
   AuthResponse,
   SupportRequest,
   SupportResponse,
+  BidRequest,
   BidResponse,
-  UserType,
+  BidSummary,
+  MyBidsSummary,
+  OAuthProvider,
+  OAuthCallbackRequest,
+  PledgeCreateRequest,
+  PledgeResponse,
+  ProfileUpdateRequest,
+  AddressCreateRequest,
+  AddressUpdateRequest,
+  AddressResponse,
 } from '@/src/types/api';
 import { tokenStorage } from '@/src/lib/auth';
 
-// 인메모리 저장소 (Mock API용)
-const projectStore = new Map<number, ProjectResponse>();
-const auctionStore = new Map<number, AuctionResponse>();
-const supportStore = new Map<number, SupportResponse>();
-const bidStore = new Map<number, BidResponse>();
+// 백엔드 API 기본 URL
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
 
-// localStorage 키
-const PROJECT_STORE_KEY = 'ddip_projects';
-const AUCTION_STORE_KEY = 'ddip_auctions';
-const SUPPORT_STORE_KEY = 'ddip_supports';
-const BID_STORE_KEY = 'ddip_bids';
+// S3 이미지 베이스 URL (cloud.aws.s3.bucket=ddip-image, region=ap-northeast-2 기준)
+const S3_IMAGE_BASE_URL =
+  process.env.NEXT_PUBLIC_S3_IMAGE_BASE_URL ||
+  'https://ddip-image.s3.ap-northeast-2.amazonaws.com';
 
-// localStorage에서 데이터 로드
-function loadProjectsFromStorage(): void {
-  try {
-    const stored = localStorage.getItem(PROJECT_STORE_KEY);
-    if (stored) {
-      const projects = JSON.parse(stored) as ProjectResponse[];
-      projects.forEach(project => {
-        projectStore.set(project.id, project);
-      });
-      console.log(`localStorage에서 ${projects.length}개 프로젝트 로드됨`);
-    }
-  } catch (error) {
-    console.error('프로젝트 로드 실패:', error);
-  }
+/** S3 키 또는 이미 전체 URL인 값을 브라우저에서 접근 가능한 URL로 변환 */
+function toS3ImageUrl(keyOrUrl: string | null | undefined): string | null {
+  if (!keyOrUrl || typeof keyOrUrl !== 'string') return null;
+  const trimmed = keyOrUrl.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+  const base = S3_IMAGE_BASE_URL.endsWith('/') ? S3_IMAGE_BASE_URL : S3_IMAGE_BASE_URL + '/';
+  return base + (trimmed.startsWith('/') ? trimmed.slice(1) : trimmed);
 }
 
-function loadAuctionsFromStorage(): void {
-  try {
-    const stored = localStorage.getItem(AUCTION_STORE_KEY);
-    if (stored) {
-      const auctions = JSON.parse(stored) as AuctionResponse[];
-      auctions.forEach(auction => {
-        auctionStore.set(auction.id, auction);
-      });
-      console.log(`localStorage에서 ${auctions.length}개 경매 로드됨`);
-    }
-  } catch (error) {
-    console.error('경매 로드 실패:', error);
-  }
-}
-
-// localStorage에 데이터 저장
-function saveProjectsToStorage(): void {
-  try {
-    const projects = Array.from(projectStore.values());
-    localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(projects));
-  } catch (error) {
-    console.error('프로젝트 저장 실패:', error);
-  }
-}
-
-function saveAuctionsToStorage(): void {
-  try {
-    const auctions = Array.from(auctionStore.values());
-    localStorage.setItem(AUCTION_STORE_KEY, JSON.stringify(auctions));
-  } catch (error) {
-    console.error('경매 저장 실패:', error);
-  }
-}
-
-function loadSupportsFromStorage(): void {
-  try {
-    const stored = localStorage.getItem(SUPPORT_STORE_KEY);
-    if (stored) {
-      const supports = JSON.parse(stored) as SupportResponse[];
-      supports.forEach(support => {
-        supportStore.set(support.id, support);
-      });
-      console.log(`localStorage에서 ${supports.length}개 후원 내역 로드됨`);
-    }
-  } catch (error) {
-    console.error('후원 내역 로드 실패:', error);
-  }
-}
-
-function saveSupportsToStorage(): void {
-  try {
-    const supports = Array.from(supportStore.values());
-    localStorage.setItem(SUPPORT_STORE_KEY, JSON.stringify(supports));
-  } catch (error) {
-    console.error('후원 내역 저장 실패:', error);
-  }
-}
-
-function loadBidsFromStorage(): void {
-  try {
-    const stored = localStorage.getItem(BID_STORE_KEY);
-    if (stored) {
-      const bids = JSON.parse(stored) as BidResponse[];
-      bids.forEach(bid => {
-        bidStore.set(bid.id, bid);
-      });
-      console.log(`localStorage에서 ${bids.length}개 입찰 내역 로드됨`);
-    }
-  } catch (error) {
-    console.error('입찰 내역 로드 실패:', error);
-  }
-}
-
-function saveBidsToStorage(): void {
-  try {
-    const bids = Array.from(bidStore.values());
-    localStorage.setItem(BID_STORE_KEY, JSON.stringify(bids));
-  } catch (error) {
-    console.error('입찰 내역 저장 실패:', error);
-  }
-}
-
-// 초기화 시 localStorage에서 로드
-if (typeof window !== 'undefined') {
-  loadProjectsFromStorage();
-  loadAuctionsFromStorage();
-  loadSupportsFromStorage();
-  loadBidsFromStorage();
-}
-
-// Mock 데이터 생성 함수들
-const createMockUser = (id: number, overrides?: Partial<UserResponse>): UserResponse => ({
-  id,
-  email: `user${id}@example.com`,
-  name: `사용자${id}`,
-  nickname: `nickname${id}`,
-  profileImageUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${id}`,
-  phone: `010-${String(id).padStart(4, '0')}-${String(id * 2).padStart(4, '0')}`,
-  ...overrides,
-});
-
-// 현재 로그인한 사용자 정보 가져오기
-function getCurrentUser(): UserResponse {
-  const savedUser = tokenStorage.getUser();
-  if (savedUser) {
-    return savedUser;
-  }
-  // 사용자 정보가 없으면 기본 Mock 사용자 반환 (비로그인 상태)
-  return createMockUser(1);
-}
-
-const createMockRewardTier = (
-  id: number,
-  overrides?: Partial<RewardTierResponse>
-): RewardTierResponse => ({
-  id,
-  title: `리워드 티어 ${id}`,
-  description: `리워드 티어 ${id}에 대한 설명입니다.`,
-  price: (id + 1) * 10000,
-  limitQuantity: id % 2 === 0 ? 100 : null,
-  soldQuantity: Math.floor(Math.random() * 50),
-  ...overrides,
-});
-
-const createMockProject = (
-  id: number,
-  overrides?: Partial<ProjectResponse>
-): ProjectResponse => {
-  const creator = createMockUser(id);
-  const rewardTiers = [
-    createMockRewardTier(id * 10 + 1),
-    createMockRewardTier(id * 10 + 2),
-    createMockRewardTier(id * 10 + 3),
-  ];
-
-  const statuses: ProjectResponse['status'][] = [
-    'DRAFT',
-    'OPEN',
-    'SUCCESS',
-    'FAILED',
-    'CANCELED',
-  ];
-  const status = statuses[id % statuses.length];
-
-  // 기본 날짜 생성 (안전하게)
-  // id가 타임스탬프처럼 큰 숫자면 작은 값으로 변환
-  const normalizedId = id > 1000000 ? id % 1000 : id
-  const defaultStartDate = new Date(Date.now() - normalizedId * 86400000)
-  const defaultEndDate = new Date(Date.now() + (30 - normalizedId) * 86400000)
-  const defaultCreatedAt = new Date(Date.now() - (normalizedId + 10) * 86400000)
-
-  // overrides의 날짜가 유효한지 검증
-  // 이미 ISO 문자열이면 그대로 사용, 아니면 파싱 후 변환
-  let startAt: string
-  let endAt: string
-  let createdAt: string
-
-  if (overrides?.startAt) {
-    // 이미 ISO 문자열 형식인지 확인
-    if (typeof overrides.startAt === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(overrides.startAt)) {
-      // 이미 ISO 형식이면 그대로 사용
-      const date = new Date(overrides.startAt)
-      if (isNaN(date.getTime())) {
-        console.error("Invalid startAt ISO string:", overrides.startAt)
-        startAt = defaultStartDate.toISOString()
-      } else {
-        startAt = overrides.startAt // 이미 ISO 형식이므로 그대로 사용
-      }
-    } else {
-      // 다른 형식이면 파싱 후 변환
-      const date = new Date(overrides.startAt)
-      if (isNaN(date.getTime())) {
-        console.error("Invalid startAt in overrides:", overrides.startAt)
-        startAt = defaultStartDate.toISOString()
-      } else {
-        startAt = date.toISOString()
-      }
-    }
-  } else {
-    startAt = defaultStartDate.toISOString()
-  }
-
-  if (overrides?.endAt) {
-    // 이미 ISO 문자열 형식인지 확인
-    if (typeof overrides.endAt === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(overrides.endAt)) {
-      // 이미 ISO 형식이면 그대로 사용
-      const date = new Date(overrides.endAt)
-      if (isNaN(date.getTime())) {
-        console.error("Invalid endAt ISO string:", overrides.endAt)
-        endAt = defaultEndDate.toISOString()
-      } else {
-        endAt = overrides.endAt // 이미 ISO 형식이므로 그대로 사용
-      }
-    } else {
-      // 다른 형식이면 파싱 후 변환
-      const date = new Date(overrides.endAt)
-      if (isNaN(date.getTime())) {
-        console.error("Invalid endAt in overrides:", overrides.endAt)
-        endAt = defaultEndDate.toISOString()
-      } else {
-        endAt = date.toISOString()
-      }
-    }
-  } else {
-    endAt = defaultEndDate.toISOString()
-  }
-
-  if (overrides?.createdAt) {
-    const date = new Date(overrides.createdAt)
-    if (isNaN(date.getTime())) {
-      console.error("Invalid createdAt in overrides:", overrides.createdAt)
-      createdAt = defaultCreatedAt.toISOString()
-    } else {
-      createdAt = date.toISOString()
-    }
-  } else {
-    createdAt = defaultCreatedAt.toISOString()
-  }
-
-  // overrides를 먼저 스프레드하고, 검증된 날짜로 덮어쓰기
-  return {
-    id,
-    creator,
-    title: `프로젝트 제목 ${id}`,
-    description: `프로젝트 ${id}에 대한 상세 설명입니다.`,
-    imageUrl: `https://picsum.photos/800/600?random=${id}`,
-    targetAmount: 1000000,
-    currentAmount: Math.floor(Math.random() * 1000000),
-    status,
-    rewardTiers,
-    ...overrides,
-    // 날짜는 위에서 검증된 값으로 덮어쓰기 (overrides의 날짜가 유효하지 않을 수 있으므로)
-    startAt,
-    endAt,
-    createdAt,
+// API 요청 헬퍼 함수
+async function apiRequest<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const token = tokenStorage.getAccessToken();
+  const isFormData = options.body instanceof FormData;
+  const headers: Record<string, string> = {
+    ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
+    ...(options.headers as Record<string, string> || {}),
   };
-};
+  // FormData 사용 시 Content-Type은 브라우저가 boundary 포함해 설정하므로 제거
+  if (isFormData && 'Content-Type' in headers) delete headers['Content-Type'];
 
-const createMockAuction = (
-  id: number,
-  overrides?: Partial<AuctionResponse>
-): AuctionResponse => {
-  const seller = createMockUser(id);
-  const statuses: AuctionResponse['status'][] = [
-    'SCHEDULED',
-    'RUNNING',
-    'ENDED',
-    'CANCELED',
-  ];
-  const status = statuses[id % statuses.length];
-  const winner = status === 'ENDED' ? createMockUser(id + 100) : null;
-
-  // 기본 날짜 생성 (안전하게)
-  // overrides에 날짜가 없을 때만 기본 날짜 생성
-  // id가 타임스탬프처럼 큰 숫자면 작은 값으로 변환
-  const normalizedId = id > 1000000 ? id % 1000 : id
-  const defaultStartDate = new Date(Date.now() - normalizedId * 86400000)
-  const defaultEndDate = new Date(Date.now() + (7 - normalizedId) * 86400000)
-
-  // overrides의 날짜가 유효한지 검증
-  // 이미 ISO 문자열이면 그대로 사용, 아니면 파싱 후 변환
-  let startAt: string
-  let endAt: string
-
-  if (overrides?.startAt) {
-    // 이미 ISO 문자열 형식인지 확인
-    if (typeof overrides.startAt === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(overrides.startAt)) {
-      // 이미 ISO 형식이면 그대로 사용
-      const date = new Date(overrides.startAt)
-      if (isNaN(date.getTime())) {
-        console.error("Invalid startAt ISO string:", overrides.startAt)
-        startAt = defaultStartDate.toISOString()
-      } else {
-        startAt = overrides.startAt // 이미 ISO 형식이므로 그대로 사용
-      }
-    } else {
-      // 다른 형식이면 파싱 후 변환
-      const date = new Date(overrides.startAt)
-      if (isNaN(date.getTime())) {
-        console.error("Invalid startAt in overrides:", overrides.startAt)
-        startAt = defaultStartDate.toISOString()
-      } else {
-        startAt = date.toISOString()
-      }
-    }
-  } else {
-    startAt = defaultStartDate.toISOString()
+  if (token) {
+    // 토큰 앞뒤 공백 제거 및 Bearer 형식 확인
+    const cleanToken = token.trim().replace(/^["']|["']$/g, ''); // 앞뒤 따옴표 제거
+    headers['Authorization'] = `Bearer ${cleanToken}`;
   }
 
-  if (overrides?.endAt) {
-    // 이미 ISO 문자열 형식인지 확인
-    if (typeof overrides.endAt === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(overrides.endAt)) {
-      // 이미 ISO 형식이면 그대로 사용
-      const date = new Date(overrides.endAt)
-      if (isNaN(date.getTime())) {
-        console.error("Invalid endAt ISO string:", overrides.endAt)
-        endAt = defaultEndDate.toISOString()
-      } else {
-        endAt = overrides.endAt // 이미 ISO 형식이므로 그대로 사용
-      }
-    } else {
-      // 다른 형식이면 파싱 후 변환
-      const date = new Date(overrides.endAt)
-      if (isNaN(date.getTime())) {
-        console.error("Invalid endAt in overrides:", overrides.endAt)
-        endAt = defaultEndDate.toISOString()
-      } else {
-        endAt = date.toISOString()
-      }
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    ...options,
+    headers,
+    credentials: 'include', // refreshToken 쿠키 저장을 위해 필수
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let errorMessage = '요청 처리 중 오류가 발생했습니다';
+    let errorJson: any = null;
+    
+    try {
+      errorJson = JSON.parse(errorText);
+      errorMessage = errorJson.message || errorJson.error || errorMessage;
+    } catch {
+      errorMessage = errorText || errorMessage;
     }
-  } else {
-    endAt = defaultEndDate.toISOString()
+    
+    // 에러 로깅
+    console.error(`API 요청 실패 [${response.status}]:`, {
+      endpoint,
+      status: response.status,
+      errorMessage,
+    });
+    
+    throw new Error(`${errorMessage} (${response.status})`);
   }
 
-  // overrides를 먼저 스프레드하고, 검증된 날짜로 덮어쓰기
-  return {
-    id,
-    seller,
-    title: `경매 상품 ${id}`,
-    description: `경매 상품 ${id}에 대한 상세 설명입니다.`,
-    imageUrl: `https://picsum.photos/800/600?random=${id + 1000}`,
-    startPrice: 50000,
-    currentPrice: 50000 + id * 10000,
-    bidStep: 5000,
-    buyoutPrice: id % 2 === 0 ? 200000 : null,
-    status,
-    winner,
-    ...overrides,
-    // 날짜는 위에서 검증된 값으로 덮어쓰기 (overrides의 날짜가 유효하지 않을 수 있으므로)
-    startAt,
-    endAt,
-  };
-};
+  // DELETE 요청 등은 응답 본문이 없을 수 있음
+  if (response.status === 204 || response.headers.get('content-length') === '0') {
+    return {} as T;
+  }
+
+  // 응답 본문 파싱
+  const responseData = await response.json();
+  return responseData as T;
+}
+
 
 // API 함수들 - 프로젝트 관련
 export const projectApi = {
   /**
    * 프로젝트 목록 조회
+   * GET /api/crowd
    */
   getProjects: async (params?: {
     status?: ProjectResponse['status'];
     page?: number;
     limit?: number;
   }): Promise<ProjectResponse[]> => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    try {
+      // 백엔드에서 전체 프로젝트 목록 조회
+      const backendResponse = await apiRequest<any[]>('/api/crowd', {
+        method: 'GET',
+      });
 
-    // localStorage에서 저장된 프로젝트 가져오기
-    const storedProjects = Array.from(projectStore.values());
-    
-    // 상태 필터링
-    let filteredProjects = storedProjects;
-    if (params?.status) {
-      filteredProjects = storedProjects.filter(project => project.status === params.status);
+      // 각 프로젝트를 프론트엔드 타입으로 변환
+      const projects = backendResponse.map((backendProject: any) => {
+        // Creator 정보 처리
+        let creator: UserResponse;
+        if (backendProject.creator) {
+          creator = {
+            id: backendProject.creator.id || backendProject.creatorId || 0,
+            email: backendProject.creator.email || null,
+            name: backendProject.creator.name || backendProject.creator.username || '',
+            nickname: backendProject.creator.nickname || '',
+            profileImageUrl: backendProject.creator.profileImageUrl || null,
+            phone: backendProject.creator.phone || backendProject.creator.phoneNumber || null,
+          };
+        } else if (backendProject.creatorId) {
+          creator = {
+            id: backendProject.creatorId,
+            email: null,
+            name: '',
+            nickname: `사용자 ${backendProject.creatorId}`,
+            profileImageUrl: null,
+            phone: null,
+          };
+        } else {
+          creator = {
+            id: 0,
+            email: null,
+            name: '',
+            nickname: '알 수 없음',
+            profileImageUrl: null,
+            phone: null,
+          };
+        }
+
+        // 이미지 처리
+        const thumbnailUrl = backendProject.thumbnailUrl || backendProject.thumbnail_url || null;
+        const imageUrl = backendProject.imageUrl || thumbnailUrl || null;
+        const imageUrls = backendProject.imageUrls || (imageUrl ? [imageUrl] : null);
+
+        // 날짜 필드 처리
+        const startAt = backendProject.startAt || backendProject.start_at || '';
+        const endAt = backendProject.endAt || backendProject.end_at || '';
+        const createdAt = backendProject.createdAt || backendProject.created_date || backendProject.createdDate || '';
+
+        return {
+          id: backendProject.id,
+          creator,
+          title: backendProject.title || '',
+          description: backendProject.description || '',
+          imageUrl,
+          imageUrls,
+          targetAmount: backendProject.targetAmount || backendProject.target_amount || 0,
+          currentAmount: backendProject.currentAmount || backendProject.current_amount || 0,
+          status: backendProject.status || 'DRAFT',
+          startAt,
+          endAt,
+          rewardTiers: (backendProject.rewardTiers || backendProject.reward_tiers || []).map((tier: any) => ({
+            id: tier.id || 0,
+            title: tier.title || '',
+            description: tier.description || '',
+            price: tier.price || 0,
+            limitQuantity: tier.limitQuantity !== undefined ? tier.limitQuantity : (tier.limit_quantity !== undefined ? tier.limit_quantity : null),
+            soldQuantity: tier.soldQuantity || tier.sold_quantity || 0,
+          })),
+          createdAt,
+          categoryPath: backendProject.categoryPath || backendProject.category_path || null,
+          tags: backendProject.tags || null,
+          summary: backendProject.summary || null,
+        } as ProjectResponse;
+      });
+
+      // 클라이언트 사이드 필터링 (백엔드에 필터링 파라미터가 없으므로)
+      let filteredProjects = projects;
+      
+      // 상태 필터링
+      if (params?.status) {
+        filteredProjects = filteredProjects.filter(project => project.status === params.status);
+      }
+
+      // 최신순 정렬 (createdAt 기준)
+      filteredProjects.sort((a, b) => {
+        const dateA = new Date(a.createdAt).getTime();
+        const dateB = new Date(b.createdAt).getTime();
+        return dateB - dateA; // 최신순
+      });
+
+      // 페이지네이션 적용
+      if (params?.page && params?.limit) {
+        const page = params.page;
+        const limit = params.limit;
+        const offset = (page - 1) * limit;
+        return filteredProjects.slice(offset, offset + limit);
+      }
+
+      // limit만 있는 경우
+      if (params?.limit) {
+        return filteredProjects.slice(0, params.limit);
+      }
+
+      return filteredProjects;
+    } catch (error) {
+      console.error('프로젝트 목록 조회 실패:', error);
+      throw error;
     }
-    
-    // 최신순 정렬 (ID가 타임스탬프이므로 큰 순서대로)
-    filteredProjects.sort((a, b) => b.id - a.id);
-    
-    // limit 적용
-    const limit = params?.limit || 10;
-    return filteredProjects.slice(0, limit);
   },
 
   /**
    * 프로젝트 상세 조회
+   * GET /api/crowd/{projectId}
    */
   getProject: async (id: number): Promise<ProjectResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    
-    // 저장된 프로젝트가 있으면 반환
-    const storedProject = projectStore.get(id);
-    if (storedProject) {
-      console.log("저장된 프로젝트 반환:", { id, title: storedProject.title });
-      return storedProject;
+    try {
+      // 백엔드 응답을 받아서 프론트엔드 타입으로 변환
+      const backendResponse = await apiRequest<any>(`/api/crowd/${id}`, {
+        method: 'GET',
+      });
+
+      // 디버깅: 백엔드 응답 구조 확인
+      console.log('백엔드 프로젝트 응답:', JSON.stringify(backendResponse, null, 2));
+
+      // 백엔드 응답을 프론트엔드 타입으로 변환
+      // 백엔드 필드명이 다를 수 있으므로 안전하게 변환
+      // 백엔드 쿼리 기준: creator_id는 있지만 creator 객체는 없을 수 있음
+      // thumbnail_url은 있지만 imageUrl/imageUrls는 없을 수 있음
+      
+      // Creator 정보 처리
+      let creator: UserResponse;
+      if (backendResponse.creator) {
+        // 백엔드에 creator 객체가 있는 경우
+        creator = {
+          id: backendResponse.creator.id || backendResponse.creatorId || 0,
+          email: backendResponse.creator.email || null,
+          name: backendResponse.creator.name || backendResponse.creator.username || '',
+          nickname: backendResponse.creator.nickname || '',
+          profileImageUrl: backendResponse.creator.profileImageUrl || backendResponse.creator.profile_image_url || null,
+          phone: backendResponse.creator.phone || backendResponse.creator.phoneNumber || backendResponse.creator.phone_number || null,
+        };
+      } else if (backendResponse.creatorId) {
+        // 백엔드에 creatorId만 있는 경우 - 사용자 정보 조회 시도
+        try {
+          // creatorId로 사용자 정보 조회 (백엔드에 해당 API가 있다면)
+          // 일단 기본값으로 설정하고, 나중에 백엔드에서 creator 정보를 포함시키면 자동으로 사용됨
+          creator = {
+            id: backendResponse.creatorId,
+            email: null,
+            name: '',
+            nickname: `사용자 ${backendResponse.creatorId}`,
+            profileImageUrl: null,
+            phone: null,
+          };
+        } catch (error) {
+          console.warn('생성자 정보 조회 실패:', error);
+          creator = {
+            id: backendResponse.creatorId,
+            email: null,
+            name: '',
+            nickname: `사용자 ${backendResponse.creatorId}`,
+            profileImageUrl: null,
+            phone: null,
+          };
+        }
+      } else {
+        // creatorId도 없는 경우 (에러 상황)
+        creator = {
+          id: 0,
+          email: null,
+          name: '',
+          nickname: '알 수 없음',
+          profileImageUrl: null,
+          phone: null,
+        };
+      }
+
+      // 이미지 처리 (백엔드에 thumbnail_url이 있을 수 있음)
+      const thumbnailUrl = backendResponse.thumbnailUrl || backendResponse.thumbnail_url || null;
+      const imageUrl = backendResponse.imageUrl || thumbnailUrl || null;
+      const imageUrls = backendResponse.imageUrls || (imageUrl ? [imageUrl] : null);
+
+      // 날짜 필드 처리 (백엔드 필드명이 다를 수 있음)
+      const startAt = backendResponse.startAt || backendResponse.start_at || '';
+      const endAt = backendResponse.endAt || backendResponse.end_at || '';
+      const createdAt = backendResponse.createdAt || backendResponse.created_date || backendResponse.createdDate || '';
+
+      const project: ProjectResponse = {
+        id: backendResponse.id,
+        creator,
+        title: backendResponse.title || '',
+        description: backendResponse.description || '',
+        imageUrl,
+        imageUrls,
+        targetAmount: backendResponse.targetAmount || backendResponse.target_amount || 0,
+        currentAmount: backendResponse.currentAmount || backendResponse.current_amount || 0,
+        status: backendResponse.status || 'DRAFT',
+        startAt,
+        endAt,
+        rewardTiers: (backendResponse.rewardTiers || backendResponse.reward_tiers || []).map((tier: any) => ({
+          id: tier.id || 0,
+          title: tier.title || '',
+          description: tier.description || '',
+          price: tier.price || 0,
+          limitQuantity: tier.limitQuantity !== undefined ? tier.limitQuantity : (tier.limit_quantity !== undefined ? tier.limit_quantity : null),
+          soldQuantity: tier.soldQuantity || tier.sold_quantity || 0,
+        })),
+        createdAt,
+        categoryPath: backendResponse.categoryPath || backendResponse.category_path || null,
+        tags: backendResponse.tags || null,
+        summary: backendResponse.summary || null,
+      };
+
+      return project;
+    } catch (error) {
+      console.error('프로젝트 조회 실패:', error);
+      throw error;
     }
-    
-    // 없으면 기본 Mock 데이터 반환
-    console.log("기본 Mock 프로젝트 반환:", id);
-    return createMockProject(id);
   },
 
   /**
    * 프로젝트 생성
+   * POST /api/crowd
+   * 백엔드 응답: Long projectId
    */
   createProject: async (
     data: Omit<ProjectResponse, 'id' | 'creator' | 'createdAt'>
   ): Promise<ProjectResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    
-    // 날짜 유효성 검사 및 로깅
-    console.log("createProject received data:", {
-      startAt: data.startAt,
-      endAt: data.endAt,
-      startAtType: typeof data.startAt,
-      endAtType: typeof data.endAt
-    })
-    
-    // startAt과 endAt이 이미 ISO 문자열인지 확인
-    if (data.startAt && typeof data.startAt === 'string') {
-      const startDate = new Date(data.startAt)
-      if (isNaN(startDate.getTime())) {
-        console.error("Invalid startAt in createProject:", data.startAt)
-        throw new Error("유효하지 않은 시작일입니다")
+    try {
+      // 백엔드에 전송할 데이터 형식 변환
+      // thumbnailImageUrl은 필수 필드이므로 첫 번째 이미지 URL을 사용
+      const thumbnailImageUrl = data.imageUrl || (data.imageUrls && data.imageUrls.length > 0 ? data.imageUrls[0] : null);
+      
+      if (!thumbnailImageUrl) {
+        throw new Error('프로젝트 이미지(썸네일)를 업로드해주세요');
       }
+
+      const requestData = {
+        title: data.title,
+        description: data.description,
+        targetAmount: data.targetAmount,
+        startAt: data.startAt,
+        endAt: data.endAt,
+        thumbnailImageUrl: thumbnailImageUrl,
+        rewardTiers: data.rewardTiers.map(tier => ({
+          title: tier.title,
+          description: tier.description,
+          price: tier.price,
+          limitQuantity: tier.limitQuantity,
+        })),
+        categoryPath: data.categoryPath || null,
+        tags: data.tags || null,
+        summary: data.summary || null,
+        // 이미지는 별도 업로드 API가 필요할 수 있음
+        // imageUrls: data.imageUrls || null,
+      };
+
+      console.log('프로젝트 생성 요청:', requestData);
+
+      // 프로젝트 생성 요청
+      const projectId = await apiRequest<number>('/api/crowd', {
+        method: 'POST',
+        body: JSON.stringify(requestData),
+      });
+
+      console.log('프로젝트 생성 성공, ID:', projectId);
+
+      // 생성된 프로젝트 ID로 상세 정보 조회
+      const createdProject = await projectApi.getProject(projectId);
+      
+      return createdProject;
+    } catch (error) {
+      console.error('프로젝트 생성 실패:', error);
+      throw error;
     }
-    
-    if (data.endAt && typeof data.endAt === 'string') {
-      const endDate = new Date(data.endAt)
-      if (isNaN(endDate.getTime())) {
-        console.error("Invalid endAt in createProject:", data.endAt)
-        throw new Error("유효하지 않은 종료일입니다")
-      }
-    }
-    
-    const projectId = Date.now();
-    const currentUser = getCurrentUser();
-    const result = createMockProject(projectId, {
-      ...data,
-      creator: currentUser,
-      createdAt: new Date().toISOString(),
-    });
-    
-    // 생성한 프로젝트를 저장소에 저장
-    projectStore.set(projectId, result);
-    saveProjectsToStorage(); // localStorage에도 저장
-    
-    console.log("createProject result:", {
-      id: result.id,
-      title: result.title,
-      startAt: result.startAt,
-      endAt: result.endAt
-    })
-    
-    return result
   },
 
   /**
    * 프로젝트 수정
+   * TODO: 백엔드에 수정 API가 추가되면 연동 필요 (현재 비활성화 상태)
    */
   updateProject: async (
     id: number,
     data: Partial<ProjectResponse>
   ): Promise<ProjectResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    
-    // 기존 프로젝트 가져오기
-    const existingProject = projectStore.get(id);
-    const updatedProject = createMockProject(id, {
-      ...existingProject,
-      ...data,
-    });
-    
-    // 저장소에 업데이트된 프로젝트 저장
-    projectStore.set(id, updatedProject);
-    saveProjectsToStorage(); // localStorage에도 저장
-    
-    return updatedProject;
+    // 백엔드에 수정 API가 비활성화되어 있음
+    throw new Error('프로젝트 수정 API가 현재 비활성화되어 있습니다.');
   },
 
   /**
    * 프로젝트 삭제
+   * DELETE /api/crowd/{projectId}
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   deleteProject: async (id: number): Promise<void> => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    // 저장소에서 프로젝트 삭제
-    projectStore.delete(id);
-    saveProjectsToStorage(); // localStorage에도 반영
+    try {
+      await apiRequest(`/api/crowd/${id}`, {
+        method: 'DELETE',
+      });
+      console.log('프로젝트 삭제 성공:', id);
+    } catch (error) {
+      console.error('프로젝트 삭제 실패:', error);
+      throw error;
+    }
   },
 
   /**
-   * 프로젝트 후원하기
+   * 프로젝트 후원하기 (하위 호환성 유지)
+   * @deprecated createPledge 사용 권장
    */
   supportProject: async (data: SupportRequest): Promise<SupportResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    
-    // 프로젝트 가져오기
-    const project = projectStore.get(data.projectId);
-    if (!project) {
-      throw new Error('프로젝트를 찾을 수 없습니다');
-    }
-
-    // 프로젝트 상태 확인
-    if (project.status !== 'OPEN') {
-      throw new Error('진행 중인 프로젝트에만 후원할 수 있습니다');
-    }
-
-    // 리워드 티어 찾기
-    const rewardTier = project.rewardTiers.find(tier => tier.id === data.rewardTierId);
-    if (!rewardTier) {
-      throw new Error('리워드 티어를 찾을 수 없습니다');
-    }
-
-    // 후원 금액 검증
-    if (data.amount < rewardTier.price) {
-      throw new Error(`최소 후원 금액은 ${rewardTier.price.toLocaleString()}원입니다`);
-    }
-
-    // 리워드 티어 한정 수량 확인
-    if (rewardTier.limitQuantity !== null && rewardTier.soldQuantity >= rewardTier.limitQuantity) {
-      throw new Error('해당 리워드 티어의 한정 수량이 모두 소진되었습니다');
-    }
-
-    // 목표 금액 초과 확인 (선택사항 - 경고만)
-    if (project.currentAmount + data.amount > project.targetAmount) {
-      console.warn('후원 금액이 목표 금액을 초과합니다');
-    }
-
-    // 현재 로그인한 사용자 정보 가져오기
-    const currentUser = getCurrentUser();
-
-    // 후원 내역 생성
-    const supportId = Date.now();
-    const support: SupportResponse = {
-      id: supportId,
-      projectId: data.projectId,
-      projectTitle: project.title,
+    // 새로운 API로 변환
+    const pledgeResponse = await projectApi.createPledge(data.projectId, {
       rewardTierId: data.rewardTierId,
-      rewardTierTitle: rewardTier.title,
       amount: data.amount,
-      supporter: currentUser,
-      createdAt: new Date().toISOString(),
+    });
+    
+    return {
+      id: pledgeResponse.id,
+      projectId: pledgeResponse.projectId,
+      projectTitle: pledgeResponse.projectTitle || '',
+      rewardTierId: pledgeResponse.rewardTierId,
+      rewardTierTitle: pledgeResponse.rewardTierTitle || '',
+      amount: pledgeResponse.amount,
+      supporter: pledgeResponse.supporter || {
+        id: 0,
+        email: null,
+        name: '',
+        nickname: '',
+        profileImageUrl: null,
+        phone: null,
+      },
+      createdAt: pledgeResponse.createdAt,
     };
-
-    // 후원 내역 저장
-    supportStore.set(supportId, support);
-    saveSupportsToStorage();
-
-    // 프로젝트 업데이트: 현재 금액 증가, 리워드 티어 판매 수량 증가
-    const updatedProject = {
-      ...project,
-      currentAmount: project.currentAmount + data.amount,
-      rewardTiers: project.rewardTiers.map(tier =>
-        tier.id === data.rewardTierId
-          ? { ...tier, soldQuantity: tier.soldQuantity + 1 }
-          : tier
-      ),
-    };
-
-    projectStore.set(data.projectId, updatedProject);
-    saveProjectsToStorage();
-
-    return support;
   },
 
   /**
-   * 사용자의 후원 내역 조회
+   * 리워드 구매 (Pledge 생성)
+   * POST /api/crowd/pledges/{projectId}
    */
-  getMySupports: async (userId?: number): Promise<SupportResponse[]> => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    
-    // Mock: userId가 없으면 모든 후원 내역 반환 (실제로는 인증된 사용자 ID 사용)
-    const supports = Array.from(supportStore.values());
-    if (userId) {
-      return supports.filter(support => support.supporter.id === userId);
+  createPledge: async (
+    projectId: number,
+    data: PledgeCreateRequest
+  ): Promise<PledgeResponse> => {
+    try {
+      const backendResponse = await apiRequest<any>(`/api/crowd/pledges/${projectId}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          rewardTierId: data.rewardTierId,
+          amount: data.amount,
+        }),
+      });
+
+      // 백엔드 응답을 프론트엔드 타입으로 변환
+      const pledge: PledgeResponse = {
+        id: backendResponse.id || 0,
+        projectId: backendResponse.projectId || projectId,
+        projectTitle: backendResponse.projectTitle || null,
+        rewardTierId: backendResponse.rewardTierId || data.rewardTierId,
+        rewardTierTitle: backendResponse.rewardTierTitle || null,
+        amount: backendResponse.amount || data.amount,
+        supporter: backendResponse.supporter ? {
+          id: backendResponse.supporter.id || 0,
+          email: backendResponse.supporter.email || null,
+          name: backendResponse.supporter.name || backendResponse.supporter.username || '',
+          nickname: backendResponse.supporter.nickname || '',
+          profileImageUrl: backendResponse.supporter.profileImageUrl || null,
+          phone: backendResponse.supporter.phone || backendResponse.supporter.phoneNumber || null,
+        } : undefined,
+        createdAt: backendResponse.createdAt || new Date().toISOString(),
+        status: backendResponse.status || null,
+      };
+
+      return pledge;
+    } catch (error) {
+      console.error('리워드 구매 실패:', error);
+      throw error;
     }
-    return supports.sort((a, b) => b.id - a.id); // 최신순
+  },
+
+  /**
+   * 본인의 리워드 전체 조회
+   * GET /api/crowd/pledges
+   */
+  getMyPledges: async (): Promise<PledgeResponse[]> => {
+    try {
+      const backendResponse = await apiRequest<any[]>('/api/crowd/pledges', {
+        method: 'GET',
+      });
+
+      return backendResponse.map((pledge: any) => ({
+        id: pledge.id || 0,
+        projectId: pledge.projectId || 0,
+        projectTitle: pledge.projectTitle || null,
+        rewardTierId: pledge.rewardTierId || 0,
+        rewardTierTitle: pledge.rewardTierTitle || null,
+        amount: pledge.amount || 0,
+        supporter: pledge.supporter ? {
+          id: pledge.supporter.id || 0,
+          email: pledge.supporter.email || null,
+          name: pledge.supporter.name || pledge.supporter.username || '',
+          nickname: pledge.supporter.nickname || '',
+          profileImageUrl: pledge.supporter.profileImageUrl || null,
+          phone: pledge.supporter.phone || pledge.supporter.phoneNumber || null,
+        } : undefined,
+        createdAt: pledge.createdAt || new Date().toISOString(),
+        status: pledge.status || null,
+      }));
+    } catch (error) {
+      console.error('리워드 조회 실패:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 리워드 취소
+   * PATCH /api/crowd/pledges/{pledgeId}/cancel
+   */
+  cancelPledge: async (pledgeId: number): Promise<void> => {
+    try {
+      await apiRequest(`/api/crowd/pledges/${pledgeId}/cancel`, {
+        method: 'PATCH',
+      });
+    } catch (error) {
+      console.error('리워드 취소 실패:', error);
+      throw error;
+    }
+  },
+
+  getMySupports: async (userId?: number): Promise<SupportResponse[]> => {
+    return [];
+  },
+
+  checkAndUpdateProjectStatus: async (projectId: number): Promise<ProjectResponse | null> => {
+    return null;
+  },
+
+  checkAllProjectsStatus: async (): Promise<void> => {
+    // 백엔드에서 자동 처리
+  },
+
+  /**
+   * 통계 정보 조회
+   * 프로젝트 목록을 가져와서 통계를 계산
+   */
+  getStatistics: async (): Promise<{
+    totalAmount: number;
+    totalParticipants: number;
+    activeProjects: number;
+  }> => {
+    try {
+      // 모든 프로젝트 조회
+      const allProjects = await projectApi.getProjects();
+      
+      // 누적 후원금액: 모든 프로젝트의 currentAmount 합계
+      const totalAmount = allProjects.reduce((sum, project) => {
+        return sum + (project.currentAmount || 0);
+      }, 0);
+      
+      // 참여자 수: 모든 프로젝트의 rewardTiers의 soldQuantity 합계
+      const totalParticipants = allProjects.reduce((sum, project) => {
+        const participants = project.rewardTiers.reduce((tierSum, tier) => {
+          return tierSum + (tier.soldQuantity || 0);
+        }, 0);
+        return sum + participants;
+      }, 0);
+      
+      // 진행 중인 프로젝트: status가 'OPEN'인 프로젝트 수
+      const activeProjects = allProjects.filter(
+        project => project.status === 'OPEN'
+      ).length;
+      
+      return {
+        totalAmount,
+        totalParticipants,
+        activeProjects,
+      };
+    } catch (error) {
+      console.error('통계 조회 실패:', error);
+      // 에러 발생 시 기본값 반환
+      return {
+        totalAmount: 0,
+        totalParticipants: 0,
+        activeProjects: 0,
+      };
+    }
+  },
+
+  searchProjects: async (query: string, params?: {
+    status?: ProjectResponse['status'];
+    limit?: number;
+  }): Promise<ProjectResponse[]> => {
+    return [];
   },
 };
 
@@ -605,277 +616,636 @@ export const projectApi = {
 export const auctionApi = {
   /**
    * 경매 목록 조회
+   * GET /api/auction
    */
   getAuctions: async (params?: {
-    status?: AuctionResponse['status'];
+    status?: AuctionStatus;
     page?: number;
     limit?: number;
-  }): Promise<AuctionResponse[]> => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+  }): Promise<AuctionSummary[]> => {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.status) queryParams.append('status', params.status);
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
 
-    // localStorage에서 저장된 경매 가져오기
-    const storedAuctions = Array.from(auctionStore.values());
-    
-    // 상태 필터링
-    let filteredAuctions = storedAuctions;
-    if (params?.status) {
-      filteredAuctions = storedAuctions.filter(auction => auction.status === params.status);
+      const endpoint = `/api/auction${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+      const backendResponse = await apiRequest<AuctionSummary[]>(endpoint, {
+        method: 'GET',
+      });
+
+      return backendResponse.map((auction: any) => {
+        const mainUrl =
+          toS3ImageUrl(auction.mainImageKey) ??
+          auction.thumbnailImageUrl ??
+          auction.thumbnail_url ??
+          (auction.images?.[0] ? toS3ImageUrl(auction.images[0].s3Key ?? auction.images[0].imageKey ?? auction.images[0].imageUrl) ?? null : null);
+        return {
+          id: auction.auctionId ?? auction.id ?? 0,
+          title: auction.title || '',
+          thumbnailImageUrl: mainUrl,
+          imageUrl: mainUrl,
+          startPrice: auction.startPrice || auction.start_price || 0,
+          currentPrice: auction.currentPrice || auction.current_price || 0,
+          bidStep: auction.bidStep || auction.bid_step || 0,
+          status: auction.auctionStatus ?? auction.status ?? 'SCHEDULED',
+          startAt: auction.startAt ?? auction.start_at ?? '',
+          endAt: auction.endAt ?? auction.end_at ?? '',
+          bidCount: auction.bidCount ?? auction.bid_count ?? 0,
+          categoryPath: auction.categoryPath ?? auction.category_path ?? null,
+          summary: auction.summary ?? null,
+        };
+      });
+    } catch (error) {
+      console.error('경매 목록 조회 실패:', error);
+      throw error;
     }
-    
-    // 최신순 정렬 (ID가 타임스탬프이므로 큰 순서대로)
-    filteredAuctions.sort((a, b) => b.id - a.id);
-    
-    // limit 적용
-    const limit = params?.limit || 10;
-    return filteredAuctions.slice(0, limit);
   },
 
   /**
    * 경매 상세 조회
+   * GET /api/auction/{id}
    */
   getAuction: async (id: number): Promise<AuctionResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    
-    // 저장된 경매가 있으면 반환
-    const storedAuction = auctionStore.get(id);
-    if (storedAuction) {
-      console.log("저장된 경매 반환:", { id, title: storedAuction.title });
-      return storedAuction;
+    try {
+      const backendResponse = await apiRequest<any>(`/api/auction/${id}`, {
+        method: 'GET',
+      });
+
+      // 백엔드 AuctionDetailResponseDto: images[] → S3 풀 URL로 변환 (키 또는 URL 지원)
+      const images = backendResponse.images ?? [];
+      const imageUrlsFromS3 = images
+        .map((img: any) => {
+          const keyOrUrl =
+            typeof img === 'string'
+              ? img
+              : img?.s3Key ??
+                img?.s3_key ??
+                img?.imageKey ??
+                img?.image_key ??
+                img?.key ??
+                img?.imageUrl ??
+                img?.image_url ??
+                img?.url ??
+                img?.filePath ??
+                img?.file_path ??
+                (typeof img?.image === 'string' ? img.image : img?.image?.url ?? img?.image?.imageKey ?? img?.image?.s3Key);
+          return toS3ImageUrl(keyOrUrl);
+        })
+        .filter((url: string | null): url is string => url != null);
+      const firstImageUrl =
+        imageUrlsFromS3[0] ??
+        toS3ImageUrl(backendResponse.mainImageKey) ??
+        backendResponse.thumbnailImageUrl ??
+        backendResponse.imageUrl ??
+        null;
+      const imageUrls = imageUrlsFromS3.length > 0 ? imageUrlsFromS3 : firstImageUrl ? [firstImageUrl] : null;
+      const imageUrl = firstImageUrl;
+      const thumbnailUrl = firstImageUrl;
+
+      return {
+        id: backendResponse.auctionId ?? backendResponse.id ?? 0,
+        seller: backendResponse.seller ? {
+          id: backendResponse.seller.id || 0,
+          email: backendResponse.seller.email || null,
+          name: backendResponse.seller.name || backendResponse.seller.username || '',
+          nickname: backendResponse.seller.nickname || '',
+          profileImageUrl: backendResponse.seller.profileImageUrl || backendResponse.seller.profile_image_url || null,
+          phone: backendResponse.seller.phone || backendResponse.seller.phoneNumber || null,
+        } : {
+          id: 0,
+          email: null,
+          name: '',
+          nickname: '',
+          profileImageUrl: null,
+          phone: null,
+        },
+        title: backendResponse.title || '',
+        description: backendResponse.description || '',
+        thumbnailImageUrl: thumbnailUrl,
+        imageUrl,
+        imageUrls,
+        startPrice: backendResponse.startPrice || backendResponse.start_price || 0,
+        currentPrice: backendResponse.currentPrice || backendResponse.current_price || 0,
+        bidStep: backendResponse.bidStep || backendResponse.bid_step || 0,
+        buyoutPrice: backendResponse.buyoutPrice ?? backendResponse.buyout_price ?? null,
+        status: backendResponse.auctionStatus ?? backendResponse.status ?? 'SCHEDULED',
+        startAt: backendResponse.startAt || backendResponse.start_at || '',
+        endAt: backendResponse.endAt || backendResponse.end_at || '',
+        winner: backendResponse.winner ? {
+          id: backendResponse.winner.id || 0,
+          email: backendResponse.winner.email || null,
+          name: backendResponse.winner.name || backendResponse.winner.username || '',
+          nickname: backendResponse.winner.nickname || '',
+          profileImageUrl: backendResponse.winner.profileImageUrl || backendResponse.winner.profile_image_url || null,
+          phone: backendResponse.winner.phone || backendResponse.winner.phoneNumber || null,
+        } : null,
+        categoryPath: backendResponse.categoryPath || backendResponse.category_path || null,
+        tags: backendResponse.tags || null,
+        summary: backendResponse.summary || null,
+        bids: backendResponse.bids ? backendResponse.bids.map((bid: any) => ({
+          id: bid.id || 0,
+          bidder: bid.bidder ? {
+            id: bid.bidder.id || 0,
+            email: bid.bidder.email || null,
+            name: bid.bidder.name || bid.bidder.username || '',
+            nickname: bid.bidder.nickname || '',
+            profileImageUrl: bid.bidder.profileImageUrl || bid.bidder.profile_image_url || null,
+            phone: bid.bidder.phone || bid.bidder.phoneNumber || null,
+          } : {
+            id: 0,
+            email: null,
+            name: '',
+            nickname: '',
+            profileImageUrl: null,
+            phone: null,
+          },
+          bidderNickname: bid.bidderNickname || bid.bidder_nickname || bid.bidder?.nickname || '',
+          bidPrice: bid.bidPrice || bid.bid_price || 0,
+          bidAt: bid.bidAt || bid.bid_at || bid.createdAt || '',
+        })) : [],
+        createdAt: backendResponse.createdAt || backendResponse.created_at || '',
+        updatedAt: backendResponse.updatedAt || backendResponse.updated_at || '',
+      };
+    } catch (error) {
+      console.error('경매 상세 조회 실패:', error);
+      throw error;
     }
-    
-    // 없으면 기본 Mock 데이터 반환
-    console.log("기본 Mock 경매 반환:", id);
-    return createMockAuction(id);
   },
 
   /**
-   * 경매 생성
+   * 경매 생성 (multipart/form-data: file 목록 + data JSON, 백엔드 S3 업로드)
+   * POST /api/auction
    */
-  createAuction: async (
-    data: Omit<AuctionResponse, 'id' | 'seller' | 'winner'>
-  ): Promise<AuctionResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    
-    // 날짜 유효성 검사 및 로깅
-    console.log("createAuction received data:", {
-      startAt: data.startAt,
-      endAt: data.endAt,
-      startAtType: typeof data.startAt,
-      endAtType: typeof data.endAt
-    })
-    
-    // startAt과 endAt이 이미 ISO 문자열인지 확인
-    if (data.startAt && typeof data.startAt === 'string') {
-      const startDate = new Date(data.startAt)
-      if (isNaN(startDate.getTime())) {
-        console.error("Invalid startAt in createAuction:", data.startAt)
-        throw new Error("유효하지 않은 시작일입니다")
-      }
+  createAuction: async (files: File[], data: AuctionCreateRequest): Promise<AuctionResponse> => {
+    try {
+      const formData = new FormData();
+      files.forEach((file) => formData.append('file', file));
+      const dataPart: { title: string; description: string; startPrice: number; bidStep: number; endAt: string } = {
+        title: data.title,
+        description: data.description,
+        startPrice: data.startPrice,
+        bidStep: data.bidStep,
+        endAt: data.endAt,
+      };
+      formData.append('data', new Blob([JSON.stringify(dataPart)], { type: 'application/json' }));
+
+      const backendResponse = await apiRequest<any>('/api/auction', {
+        method: 'POST',
+        body: formData,
+      });
+
+      // 백엔드 응답: images[].s3Key → S3 풀 URL로 변환
+      const images = backendResponse.images ?? [];
+      const imageUrlsFromS3 = images
+        .map((img: any) => toS3ImageUrl(img.s3Key ?? img.imageKey ?? img.imageUrl ?? img.url ?? img.image_url))
+        .filter((url: string | null): url is string => url != null);
+      const firstImageUrl =
+        imageUrlsFromS3[0] ??
+        toS3ImageUrl(backendResponse.mainImageKey) ??
+        backendResponse.thumbnailImageUrl ??
+        backendResponse.imageUrl ??
+        null;
+      const imageUrls = imageUrlsFromS3.length > 0 ? imageUrlsFromS3 : firstImageUrl ? [firstImageUrl] : null;
+      const imageUrl = firstImageUrl;
+      const thumbnailUrl = firstImageUrl;
+
+      return {
+        id: backendResponse.auctionId ?? backendResponse.id ?? 0,
+        seller: backendResponse.seller ? {
+          id: backendResponse.seller.id ?? 0,
+          email: backendResponse.seller.email ?? null,
+          name: backendResponse.seller.name ?? backendResponse.seller.username ?? '',
+          nickname: backendResponse.seller.nickname ?? '',
+          profileImageUrl: backendResponse.seller.profileImageUrl ?? backendResponse.seller.profile_image_url ?? null,
+          phone: backendResponse.seller.phone ?? backendResponse.seller.phoneNumber ?? null,
+        } : { id: 0, email: null, name: '', nickname: '', profileImageUrl: null, phone: null },
+        title: backendResponse.title ?? '',
+        description: backendResponse.description ?? '',
+        thumbnailImageUrl: thumbnailUrl,
+        imageUrl,
+        imageUrls,
+        startPrice: backendResponse.startPrice ?? backendResponse.start_price ?? 0,
+        currentPrice: backendResponse.currentPrice ?? backendResponse.current_price ?? 0,
+        bidStep: backendResponse.bidStep ?? backendResponse.bid_step ?? 0,
+        buyoutPrice: backendResponse.buyoutPrice ?? backendResponse.buyout_price ?? null,
+        status: backendResponse.auctionStatus ?? backendResponse.status ?? 'SCHEDULED',
+        startAt: backendResponse.startAt ?? backendResponse.start_at ?? '',
+        endAt: backendResponse.endAt ?? backendResponse.end_at ?? '',
+        winner: backendResponse.winner ? {
+          id: backendResponse.winner.id ?? 0,
+          email: backendResponse.winner.email ?? null,
+          name: backendResponse.winner.name ?? backendResponse.winner.username ?? '',
+          nickname: backendResponse.winner.nickname ?? '',
+          profileImageUrl: backendResponse.winner.profileImageUrl ?? backendResponse.winner.profile_image_url ?? null,
+          phone: backendResponse.winner.phone ?? backendResponse.winner.phoneNumber ?? null,
+        } : null,
+        categoryPath: backendResponse.categoryPath ?? backendResponse.category_path ?? null,
+        tags: backendResponse.tags ?? null,
+        summary: backendResponse.summary ?? null,
+        bids: (backendResponse.bids ?? []).map((bid: any) => ({
+          id: bid.id ?? 0,
+          bidder: bid.bidder ? {
+            id: bid.bidder.id ?? 0,
+            email: bid.bidder.email ?? null,
+            name: bid.bidder.name ?? bid.bidder.username ?? '',
+            nickname: bid.bidder.nickname ?? '',
+            profileImageUrl: bid.bidder.profileImageUrl ?? bid.bidder.profile_image_url ?? null,
+            phone: bid.bidder.phone ?? bid.bidder.phoneNumber ?? null,
+          } : { id: 0, email: null, name: '', nickname: '', profileImageUrl: null, phone: null },
+          bidderNickname: bid.bidderNickname ?? bid.bidder_nickname ?? bid.bidder?.nickname ?? '',
+          bidPrice: bid.bidPrice ?? bid.bid_price ?? 0,
+          bidAt: bid.bidAt ?? bid.bid_at ?? bid.createdAt ?? '',
+        })),
+        createdAt: backendResponse.createdAt ?? backendResponse.created_at ?? '',
+        updatedAt: backendResponse.updatedAt ?? backendResponse.updated_at ?? '',
+      };
+    } catch (error) {
+      console.error('경매 생성 실패:', error);
+      throw error;
     }
-    
-    if (data.endAt && typeof data.endAt === 'string') {
-      const endDate = new Date(data.endAt)
-      if (isNaN(endDate.getTime())) {
-        console.error("Invalid endAt in createAuction:", data.endAt)
-        throw new Error("유효하지 않은 종료일입니다")
-      }
-    }
-    
-    const auctionId = Date.now();
-    const currentUser = getCurrentUser();
-    const result = createMockAuction(auctionId, {
-      ...data,
-      seller: currentUser,
-      winner: null,
-    });
-    
-    // 생성한 경매를 저장소에 저장
-    auctionStore.set(auctionId, result);
-    saveAuctionsToStorage(); // localStorage에도 저장
-    
-    console.log("createAuction result:", {
-      id: result.id,
-      title: result.title,
-      startAt: result.startAt,
-      endAt: result.endAt
-    })
-    
-    return result
   },
 
   /**
    * 경매 수정
+   * PUT /api/auction/{id}
    */
   updateAuction: async (
     id: number,
-    data: Partial<AuctionResponse>
+    data: Partial<AuctionCreateRequest>
   ): Promise<AuctionResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    
-    // 기존 경매 가져오기
-    const existingAuction = auctionStore.get(id);
-    const updatedAuction = createMockAuction(id, {
-      ...existingAuction,
-      ...data,
-    });
-    
-    // 저장소에 업데이트된 경매 저장
-    auctionStore.set(id, updatedAuction);
-    saveAuctionsToStorage(); // localStorage에도 저장
-    
-    return updatedAuction;
+    try {
+      const requestData: any = {};
+      if (data.title !== undefined) requestData.title = data.title;
+      if (data.description !== undefined) requestData.description = data.description;
+      if (data.startPrice !== undefined) requestData.startPrice = data.startPrice;
+      if (data.bidStep !== undefined) requestData.bidStep = data.bidStep;
+      if (data.endAt !== undefined) requestData.endAt = data.endAt;
+      if (data.thumbnailImageUrl !== undefined) requestData.thumbnailImageUrl = data.thumbnailImageUrl;
+      if (data.categoryPath !== undefined) requestData.categoryPath = data.categoryPath;
+      if (data.tags !== undefined) requestData.tags = data.tags;
+      if (data.summary !== undefined) requestData.summary = data.summary;
+
+      await apiRequest(`/api/auction/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(requestData),
+      });
+
+      // 수정된 경매 정보 조회
+      return await auctionApi.getAuction(id);
+    } catch (error) {
+      console.error('경매 수정 실패:', error);
+      throw error;
+    }
   },
 
   /**
    * 경매 삭제
+   * DELETE /api/auction/{id}
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   deleteAuction: async (id: number): Promise<void> => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    // 저장소에서 경매 삭제
-    auctionStore.delete(id);
-    saveAuctionsToStorage(); // localStorage에도 반영
+    try {
+      await apiRequest(`/api/auction/${id}`, {
+        method: 'DELETE',
+      });
+      console.log('경매 삭제 성공:', id);
+    } catch (error) {
+      console.error('경매 삭제 실패:', error);
+      throw error;
+    }
   },
 
   /**
    * 경매 입찰
+   * POST /api/auctions/{auctionId}/bids
    */
   placeBid: async (
     auctionId: number,
-    bidAmount: number
-  ): Promise<AuctionResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    
-    // 저장된 경매가 있으면 사용, 없으면 기본 Mock 데이터
-    const existingAuction = auctionStore.get(auctionId);
-    const auction = existingAuction || createMockAuction(auctionId);
-    
-    // 경매 상태 확인
-    if (auction.status !== 'RUNNING') {
-      throw new Error('진행 중인 경매에만 입찰할 수 있습니다');
-    }
-    
-    // 입찰 금액 검증
-    const minBidAmount = auction.currentPrice + auction.bidStep;
-    if (bidAmount < minBidAmount) {
-      throw new Error(`최소 입찰 금액은 ${minBidAmount.toLocaleString()}원입니다`);
-    }
-    
-    // 즉시 구매가가 있고 입찰 금액이 즉시 구매가 이상이면 즉시 구매 처리
-    if (auction.buyoutPrice && bidAmount >= auction.buyoutPrice) {
-      // 즉시 구매 처리
-      const currentUser = getCurrentUser();
-      const updatedAuction = {
-        ...auction,
-        currentPrice: auction.buyoutPrice,
-        status: 'ENDED' as const,
-        winner: currentUser,
+    bidData: BidRequest
+  ): Promise<BidResponse> => {
+    try {
+      const backendResponse = await apiRequest<any>(`/api/auction/${auctionId}/bids`, {
+        method: 'POST',
+        body: JSON.stringify({
+          price: bidData.price,
+        }),
+      });
+
+      return {
+        bidId: backendResponse.bidId || backendResponse.bid_id || 0,
+        auction: backendResponse.auction ? await auctionApi.getAuction(backendResponse.auction.id || auctionId) : await auctionApi.getAuction(auctionId),
+        bidPrice: backendResponse.bidPrice || backendResponse.bid_price || bidData.price,
+        isHighestBidder: backendResponse.isHighestBidder || backendResponse.is_highest_bidder || false,
       };
-      auctionStore.set(auctionId, updatedAuction);
-      saveAuctionsToStorage();
-      
-      // 입찰 내역 저장
-      const bidId = Date.now();
-      const bid: BidResponse = {
-        id: bidId,
-        auctionId: auctionId,
-        auctionTitle: auction.title,
-        amount: auction.buyoutPrice,
-        bidder: currentUser,
-        createdAt: new Date().toISOString(),
-      };
-      bidStore.set(bidId, bid);
-      saveBidsToStorage();
-      
-      return updatedAuction;
+    } catch (error) {
+      console.error('경매 입찰 실패:', error);
+      throw error;
     }
-    
-    // 현재 로그인한 사용자 정보 가져오기
-    const currentUser = getCurrentUser();
-    
-    // 입찰 내역 생성
-    const bidId = Date.now();
-    const bid: BidResponse = {
-      id: bidId,
-      auctionId: auctionId,
-      auctionTitle: auction.title,
-      amount: bidAmount,
-      bidder: currentUser,
-      createdAt: new Date().toISOString(),
-    };
-    
-    // 입찰 내역 저장
-    bidStore.set(bidId, bid);
-    saveBidsToStorage();
-    
-    const updatedAuction = {
-      ...auction,
-      currentPrice: bidAmount,
-    };
-    
-    // 입찰 후 업데이트된 경매를 저장소에 저장
-    auctionStore.set(auctionId, updatedAuction);
-    saveAuctionsToStorage(); // localStorage에도 저장
-    
-    return updatedAuction;
   },
 
   /**
    * 특정 경매의 입찰 내역 조회
+   * GET /api/auction/{auctionId}/bids
    */
-  getBidsByAuction: async (auctionId: number): Promise<BidResponse[]> => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    
-    const bids = Array.from(bidStore.values());
-    const auctionBids = bids
-      .filter(bid => bid.auctionId === auctionId)
-      .sort((a, b) => b.id - a.id); // 최신순 (가장 최근 입찰이 위로)
-    
-    return auctionBids;
+  getBidsByAuction: async (auctionId: number): Promise<BidSummary[]> => {
+    try {
+      const backendResponse = await apiRequest<any[]>(`/api/auction/${auctionId}/bids`, {
+        method: 'GET',
+      });
+
+      return backendResponse.map((bid: any) => ({
+        id: bid.id || 0,
+        bidder: bid.bidder ? {
+          id: bid.bidder.id || 0,
+          email: bid.bidder.email || null,
+          name: bid.bidder.name || bid.bidder.username || '',
+          nickname: bid.bidder.nickname || '',
+          profileImageUrl: bid.bidder.profileImageUrl || bid.bidder.profile_image_url || null,
+          phone: bid.bidder.phone || bid.bidder.phoneNumber || null,
+        } : {
+          id: 0,
+          email: null,
+          name: '',
+          nickname: '',
+          profileImageUrl: null,
+          phone: null,
+        },
+        bidderNickname: bid.bidderNickname || bid.bidder_nickname || bid.bidder?.nickname || '',
+        bidPrice: bid.bidPrice || bid.bid_price || 0,
+        bidAt: bid.bidAt || bid.bid_at || bid.createdAt || '',
+      }));
+    } catch (error) {
+      console.error('입찰 내역 조회 실패:', error);
+      throw error;
+    }
   },
 
   /**
-   * 사용자의 입찰 내역 조회
+   * 사용자의 입찰 내역 조회 (마이페이지용)
+   * GET /api/auction/my-bids
    */
-  getMyBids: async (userId?: number): Promise<BidResponse[]> => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    
-    // Mock: userId가 없으면 모든 입찰 내역 반환 (실제로는 인증된 사용자 ID 사용)
-    const bids = Array.from(bidStore.values());
-    if (userId) {
-      return bids.filter(bid => bid.bidder.id === userId);
+  getMyBids: async (): Promise<MyBidsSummary[]> => {
+    try {
+      const backendResponse = await apiRequest<any[]>('/api/auction/my-bids', {
+        method: 'GET',
+      });
+
+      return backendResponse.map((myBid: any) => ({
+        auctionId: myBid.auctionId || myBid.auction_id || 0,
+        auctionTitle: myBid.auctionTitle || myBid.auction_title || '',
+        auctionThumbnailUrl: myBid.auctionThumbnailUrl || myBid.auction_thumbnail_url || null,
+        auctionStatus: myBid.auctionStatus || myBid.auction_status || 'SCHEDULED',
+        myAuctionStatus: myBid.myAuctionStatus || myBid.my_auction_status || 'OUTBID',
+        lastBidPrice: myBid.lastBidPrice || myBid.last_bid_price || 0,
+        currentPrice: myBid.currentPrice || myBid.current_price || 0,
+        isHighestBidder: myBid.isHighestBidder !== undefined ? myBid.isHighestBidder : (myBid.is_highest_bidder !== undefined ? myBid.is_highest_bidder : false),
+        lastBidAt: myBid.lastBidAt || myBid.last_bid_at || '',
+        auctionEndAt: myBid.auctionEndAt || myBid.auction_end_at || '',
+        isPaid: myBid.isPaid !== undefined ? myBid.isPaid : (myBid.is_paid !== undefined ? myBid.is_paid : false),
+      }));
+    } catch (error) {
+      console.error('내 입찰 내역 조회 실패:', error);
+      throw error;
     }
-    return bids.sort((a, b) => b.id - a.id); // 최신순
+  },
+
+  /**
+   * 경매 검색
+   * GET /api/auction/search?query={query}&status={status}&limit={limit}
+   */
+  searchAuctions: async (query: string, params?: {
+    status?: AuctionStatus;
+    limit?: number;
+  }): Promise<AuctionSummary[]> => {
+    try {
+      const queryParams = new URLSearchParams();
+      queryParams.append('query', query);
+      if (params?.status) queryParams.append('status', params.status);
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
+
+      const endpoint = `/api/auction/search?${queryParams.toString()}`;
+      const backendResponse = await apiRequest<AuctionSummary[]>(endpoint, {
+        method: 'GET',
+      });
+
+      return backendResponse.map((auction: any) => {
+        const mainUrl =
+          toS3ImageUrl(auction.mainImageKey) ??
+          auction.thumbnailImageUrl ??
+          auction.thumbnail_url ??
+          (auction.images?.[0] ? toS3ImageUrl(auction.images[0].s3Key ?? auction.images[0].imageKey ?? auction.images[0].imageUrl) ?? null : null);
+        return {
+          id: auction.auctionId ?? auction.id ?? 0,
+          title: auction.title || '',
+          thumbnailImageUrl: mainUrl,
+          imageUrl: mainUrl,
+          startPrice: auction.startPrice || auction.start_price || 0,
+          currentPrice: auction.currentPrice || auction.current_price || 0,
+          bidStep: auction.bidStep || auction.bid_step || 0,
+          status: auction.auctionStatus ?? auction.status ?? 'SCHEDULED',
+          startAt: auction.startAt ?? auction.start_at ?? '',
+          endAt: auction.endAt ?? auction.end_at ?? '',
+          bidCount: auction.bidCount ?? auction.bid_count ?? 0,
+          categoryPath: auction.categoryPath ?? auction.category_path ?? null,
+          summary: auction.summary ?? null,
+        };
+      });
+    } catch (error) {
+      console.error('경매 검색 실패:', error);
+      throw error;
+    }
   },
 };
 
 // API 함수들 - 사용자 관련
 export const userApi = {
   /**
-   * 사용자 정보 조회
+   * 마이페이지 데이터 조회 (내 경매, 입찰 내역 등)
+   * GET /api/users/my-page
+   */
+  getMyPage: async (): Promise<UserPageResponse> => {
+    try {
+      const backendResponse = await apiRequest<any>('/api/users/my-page', {
+        method: 'GET',
+      });
+
+      return {
+        user: backendResponse.user ? {
+          id: backendResponse.user.id || 0,
+          email: backendResponse.user.email || null,
+          name: backendResponse.user.name || backendResponse.user.username || '',
+          nickname: backendResponse.user.nickname || '',
+          profileImageUrl: backendResponse.user.profileImageUrl || backendResponse.user.profile_image_url || null,
+          phone: backendResponse.user.phone || backendResponse.user.phoneNumber || null,
+          roleLevel: backendResponse.user.roleLevel || backendResponse.user.role_level || 0,
+        } : {
+          id: 0,
+          email: null,
+          name: '',
+          nickname: '',
+          profileImageUrl: null,
+          phone: null,
+        },
+        auctions: (backendResponse.auctions || []).map((auction: any) => {
+          const mainUrl =
+            toS3ImageUrl(auction.mainImageKey) ??
+            auction.thumbnailImageUrl ??
+            auction.thumbnail_url ??
+            (auction.images?.[0] ? toS3ImageUrl(auction.images[0].s3Key ?? auction.images[0].imageKey ?? auction.images[0].imageUrl) ?? null : null);
+          return {
+            id: auction.auctionId ?? auction.id ?? 0,
+            title: auction.title || '',
+            thumbnailImageUrl: mainUrl,
+            imageUrl: mainUrl,
+            startPrice: auction.startPrice || auction.start_price || 0,
+            currentPrice: auction.currentPrice || auction.current_price || 0,
+            bidStep: auction.bidStep || auction.bid_step || 0,
+            status: auction.auctionStatus ?? auction.status ?? 'SCHEDULED',
+            startAt: auction.startAt ?? auction.start_at ?? '',
+            endAt: auction.endAt ?? auction.end_at ?? '',
+            bidCount: auction.bidCount ?? auction.bid_count ?? 0,
+            categoryPath: auction.categoryPath ?? auction.category_path ?? null,
+            summary: auction.summary ?? null,
+          };
+        }),
+        myBids: await Promise.all((backendResponse.myBids || []).map(async (bid: any) => {
+          let auction: AuctionResponse;
+          if (bid.auction) {
+            auction = await auctionApi.getAuction(bid.auction.id || bid.auctionId || bid.auction_id);
+          } else {
+            // auction 정보가 없으면 빈 경매 객체 반환
+            auction = {
+              id: bid.auctionId || bid.auction_id || 0,
+              seller: { id: 0, email: null, name: '', nickname: '', profileImageUrl: null, phone: null },
+              title: '',
+              description: '',
+              thumbnailImageUrl: null,
+              imageUrl: null,
+              startPrice: 0,
+              currentPrice: 0,
+              bidStep: 0,
+              buyoutPrice: null,
+              status: 'SCHEDULED',
+              startAt: '',
+              endAt: '',
+              winner: null,
+            };
+          }
+          return {
+            bidId: bid.bidId || bid.bid_id || 0,
+            auction,
+            bidPrice: bid.bidPrice || bid.bid_price || 0,
+            isHighestBidder: bid.isHighestBidder !== undefined ? bid.isHighestBidder : (bid.is_highest_bidder !== undefined ? bid.is_highest_bidder : false),
+          };
+        })),
+        myMyBids: (backendResponse.myMyBids || []).map((myBid: any) => ({
+          auctionId: myBid.auctionId || myBid.auction_id || 0,
+          auctionTitle: myBid.auctionTitle || myBid.auction_title || '',
+          auctionThumbnailUrl: myBid.auctionThumbnailUrl || myBid.auction_thumbnail_url || null,
+          auctionStatus: myBid.auctionStatus || myBid.auction_status || 'SCHEDULED',
+          myAuctionStatus: myBid.myAuctionStatus || myBid.my_auction_status || 'OUTBID',
+          lastBidPrice: myBid.lastBidPrice || myBid.last_bid_price || 0,
+          currentPrice: myBid.currentPrice || myBid.current_price || 0,
+          isHighestBidder: myBid.isHighestBidder !== undefined ? myBid.isHighestBidder : (myBid.is_highest_bidder !== undefined ? myBid.is_highest_bidder : false),
+          lastBidAt: myBid.lastBidAt || myBid.last_bid_at || '',
+          auctionEndAt: myBid.auctionEndAt || myBid.auction_end_at || '',
+          isPaid: myBid.isPaid !== undefined ? myBid.isPaid : (myBid.is_paid !== undefined ? myBid.is_paid : false),
+        })),
+      };
+    } catch (error) {
+      console.error('마이페이지 조회 실패:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 프로필 상세 조회 (다른 사용자 프로필 보기)
+   * GET /api/users/{id}/profile
+   */
+  getUserProfile: async (id: number): Promise<UserProfileResponse> => {
+    try {
+      const backendResponse = await apiRequest<any>(`/api/users/${id}/profile`, {
+        method: 'GET',
+      });
+
+      return {
+        user: backendResponse.user ? {
+          id: backendResponse.user.id || 0,
+          email: backendResponse.user.email || null,
+          name: backendResponse.user.name || backendResponse.user.username || '',
+          nickname: backendResponse.user.nickname || '',
+          profileImageUrl: backendResponse.user.profileImageUrl || backendResponse.user.profile_image_url || null,
+          phone: backendResponse.user.phone || backendResponse.user.phoneNumber || null,
+          roleLevel: backendResponse.user.roleLevel || backendResponse.user.role_level || 0,
+        } : {
+          id: 0,
+          email: null,
+          name: '',
+          nickname: '',
+          profileImageUrl: null,
+          phone: null,
+        },
+      };
+    } catch (error) {
+      console.error('프로필 조회 실패:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 사용자 정보 조회 (프로필 상세와 동일)
+   * GET /api/users/{id}
    */
   getUser: async (id: number): Promise<UserResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    return createMockUser(id);
+    try {
+      const profile = await userApi.getUserProfile(id);
+      return profile.user;
+    } catch (error) {
+      console.error('사용자 정보 조회 실패:', error);
+      throw error;
+    }
   },
 
   /**
    * 현재 로그인한 사용자 정보 조회
+   * TODO: authApi.getCurrentUser 사용
    */
   getCurrentUser: async (): Promise<UserResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    return createMockUser(1);
+    throw new Error('authApi.getCurrentUser를 사용하세요');
   },
 
   /**
    * 사용자 정보 수정
+   * PUT /api/users/me
    */
   updateUser: async (
-    id: number,
-    data: Partial<UserResponse>
+    data: ProfileUpdateRequest
   ): Promise<UserResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    return createMockUser(id, data);
+    try {
+      const requestData: any = {};
+      if (data.username !== undefined) requestData.username = data.username;
+      if (data.nickname !== undefined) requestData.nickname = data.nickname;
+      if (data.phoneNumber !== undefined) requestData.phoneNumber = data.phoneNumber;
+      if (data.profileImageUrl !== undefined) requestData.profileImageUrl = data.profileImageUrl;
+
+      const backendResponse = await apiRequest<any>('/api/users/me', {
+        method: 'PUT',
+        body: JSON.stringify(requestData),
+      });
+
+      return {
+        id: backendResponse.id || 0,
+        email: backendResponse.email || null,
+        name: backendResponse.name || backendResponse.username || '',
+        nickname: backendResponse.nickname || '',
+        profileImageUrl: backendResponse.profileImageUrl || backendResponse.profile_image_url || null,
+        phone: backendResponse.phone || backendResponse.phoneNumber || null,
+        roleLevel: backendResponse.roleLevel || backendResponse.role_level || 0,
+      };
+    } catch (error) {
+      console.error('사용자 정보 수정 실패:', error);
+      throw error;
+    }
   },
 };
 
@@ -883,107 +1253,668 @@ export const userApi = {
 export const authApi = {
   /**
    * 로그인
+   * POST /api/users/login
+   * 백엔드 응답:
+   * - 헤더: Authorization: Bearer {accessToken}
+   * - 쿠키: refresh_token={refreshToken} (HttpOnly, Secure)
+   * - 본문: { "access_token": "{accessToken}" }
    */
   login: async (data: LoginRequest): Promise<AuthResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // 요청 데이터 검증 및 로깅 (try-catch 밖에서 먼저 실행)
+    const requestBody = {
+      email: data.email,
+      password: data.password,
+    };
     
-    // Mock: 이메일과 비밀번호 검증 (실제로는 백엔드에서 처리)
-    if (data.email && data.password) {
-      const user = createMockUser(1, {
-        email: data.email,
-        name: '사용자',
-        nickname: 'nickname1',
+    const jsonBody = JSON.stringify(requestBody);
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/users/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include', // refreshToken 쿠키 저장을 위해 필수
+        body: jsonBody,
       });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage = '이메일 또는 비밀번호가 올바르지 않습니다';
+        
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.message || errorJson.error || errorMessage;
+        } catch {
+          // JSON 파싱 실패 시 기본 메시지 사용
+        }
+        
+        console.error('로그인 실패:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorMessage,
+        });
+        
+        throw new Error(errorMessage);
+      }
+
+      // 응답 본문에서 access_token 추출
+      // 백엔드 응답 형식: { "access_token": "..." }
+      const responseData = await response.json();
+      const accessToken = responseData.access_token;
+      
+      if (!accessToken) {
+        throw new Error('로그인 응답에 토큰이 없습니다');
+      }
+
+      // accessToken 저장
+      tokenStorage.setAccessToken(accessToken);
+      
+      // refreshToken은 쿠키에 저장되므로 별도 저장 불필요
+      // 백엔드가 자동으로 쿠키를 처리함
+
+      // 로그인 응답에 사용자 정보가 포함되어 있는지 확인
+      let user: UserResponse | null = null;
+      
+      if (responseData.user) {
+        // 로그인 응답에 사용자 정보가 포함되어 있는 경우
+        user = responseData.user;
+        if (user) {
+          tokenStorage.setUser(user);
+        }
+      } else if (responseData.id || responseData.email) {
+        // 응답 본문 자체가 사용자 정보인 경우 (UserResponseDto)
+        user = {
+          id: responseData.id,
+          email: responseData.email,
+          name: responseData.name || responseData.username || '',
+          nickname: responseData.nickname || '',
+          profileImageUrl: responseData.profileImageUrl || null,
+          phone: responseData.phoneNumber || responseData.phone || null,
+        };
+        tokenStorage.setUser(user);
+      } else {
+        // 로그인 응답에 사용자 정보가 없으면 null로 설정
+        // 사용자 정보는 나중에 필요할 때 /api/users/profile로 조회
+        user = null;
+      }
       
       return {
-        accessToken: `mock-access-token-${Date.now()}`,
-        refreshToken: `mock-refresh-token-${Date.now()}`,
-        user,
+        accessToken,
+        refreshToken: '', // refreshToken은 쿠키에 저장되므로 빈 문자열
+        user: user || {
+          // 임시 사용자 정보 (사용자 정보 조회 실패 시)
+          id: 0,
+          email: null,
+          name: '',
+          nickname: '',
+          profileImageUrl: null,
+          phone: null,
+        },
       };
+    } catch (error) {
+      console.error('로그인 실패 상세:', {
+        error,
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      
+      // 네트워크 오류 처리
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        // CORS 에러인지 확인
+        const errorStr = String(error);
+        if (errorStr.includes('CORS') || errorStr.includes('cors')) {
+          throw new Error(
+            'CORS 정책 오류: 백엔드 CORS 설정을 확인해주세요.\n' +
+            '필요한 설정:\n' +
+            '1. setAllowCredentials(true)\n' +
+            '2. setAllowedOrigins(List.of("http://localhost:3000"))\n' +
+            '3. setExposedHeaders(List.of("Authorization"))'
+          );
+        }
+        throw new Error('백엔드 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인해주세요.');
+      }
+      
+      // 에러 메시지 그대로 전달
+      throw error instanceof Error ? error : new Error('로그인에 실패했습니다');
     }
-    
-    throw new Error('이메일 또는 비밀번호가 올바르지 않습니다');
   },
 
   /**
    * 회원가입
+   * POST /api/users/register
+   * 백엔드에서 UserResponseDto만 반환하므로, 회원가입 후 자동 로그인 처리
    */
   register: async (data: RegisterRequest): Promise<AuthResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
     
-    // Mock: 새 사용자 생성
-    const user = createMockUser(Date.now(), {
+    // 회원가입 요청 데이터 준비
+    const requestBody = {
       email: data.email,
-      name: data.name,
+      password: data.password,
+      username: data.username,
       nickname: data.nickname,
-      phone: data.phone || null,
-    });
-    
-    return {
-      accessToken: `mock-access-token-${Date.now()}`,
-      refreshToken: `mock-refresh-token-${Date.now()}`,
-      user,
+      phoneNumber: data.phoneNumber,
+      account: data.account || null,
+      accountHolder: data.accountHolder || null,
+      bankType: data.bankType || null,
     };
+    const jsonBody = JSON.stringify(requestBody);
+    
+    // 회원가입 요청 로그
+    console.group('🟢 회원가입 요청 상세 정보');
+    console.log('📤 요청 URL:', `${API_BASE_URL}/api/users/register`);
+    console.log('📤 요청 메서드:', 'POST');
+    console.log('📤 요청 헤더:', {
+      'Content-Type': 'application/json',
+    });
+    console.log('📤 요청 Body (JSON 문자열):', jsonBody);
+    console.log('📤 요청 Body (객체):', {
+      ...requestBody,
+      password: '***' + (requestBody.password?.slice(-2) || ''),
+    });
+    console.log('📤 Body 길이:', jsonBody.length, 'bytes');
+    console.groupEnd();
+    
+    try {
+      // 회원가입 요청
+      const response = await fetch(`${API_BASE_URL}/api/users/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include', // refreshToken 쿠키 저장을 위해 필수
+        body: jsonBody,
+      });
+      
+      console.log('회원가입 응답 받음:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: '회원가입 실패' }));
+        throw new Error(errorData.message || '회원가입에 실패했습니다');
+      }
+
+      // 백엔드에서 UserResponseDto 반환 (토큰 없음)
+      const userData = await response.json();
+      
+      // 백엔드가 토큰을 함께 반환하는 경우
+      if (userData.accessToken) {
+        return {
+          accessToken: userData.accessToken,
+          refreshToken: userData.refreshToken,
+          user: userData.user || userData,
+        };
+      }
+      
+      // 백엔드가 UserResponseDto만 반환하는 경우, 자동 로그인 처리
+      // 회원가입 후 자동 로그인을 위해 로그인 API 호출
+      console.log('회원가입 성공, 자동 로그인 시도...');
+      try {
+        const loginResponse = await authApi.login({
+          email: data.email,
+          password: data.password,
+        });
+        console.log('자동 로그인 성공');
+        return loginResponse;
+      } catch (loginError) {
+        // 자동 로그인 실패해도 회원가입은 성공한 것으로 처리
+        console.warn('자동 로그인 실패 (회원가입은 성공):', loginError);
+        // 사용자 정보만 반환 (수동 로그인 필요)
+        const user: UserResponse = {
+          id: userData.id,
+          email: userData.email,
+          name: userData.name || userData.username || '',
+          nickname: userData.nickname || '',
+          profileImageUrl: userData.profileImageUrl || null,
+          phone: userData.phoneNumber || userData.phone || null,
+        };
+        return {
+          accessToken: '',
+          refreshToken: '',
+          user,
+        };
+      }
+    } catch (error) {
+      console.error('회원가입 실패 상세:', {
+        error,
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+      
+      // 네트워크 오류인 경우 더 명확한 메시지 제공
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        const errorStr = String(error);
+        if (errorStr.includes('CORS') || errorStr.includes('cors')) {
+          throw new Error(
+            'CORS 정책 오류: 백엔드 CORS 설정을 확인해주세요.\n' +
+            '필요한 설정:\n' +
+            '1. setAllowCredentials(true)\n' +
+            '2. setAllowedOrigins(List.of("http://localhost:3000"))\n' +
+            '3. /api/users/register 경로를 permitAll()로 설정'
+          );
+        }
+        throw new Error('백엔드 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인해주세요.');
+      }
+      
+      throw error instanceof Error ? error : new Error('회원가입에 실패했습니다');
+    }
   },
 
   /**
    * 로그아웃
+   * POST /api/users/logout
    */
   logout: async (): Promise<void> => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    // Mock: 토큰 삭제는 클라이언트에서 처리
+    try {
+      await apiRequest<void>('/api/users/logout', {
+        method: 'POST',
+      });
+    } catch (error) {
+      console.error('로그아웃 API 호출 실패:', error);
+      // API 호출 실패해도 클라이언트에서 토큰 삭제는 진행
+      // (네트워크 오류 등으로 백엔드 호출이 실패해도 로그아웃은 처리)
+    }
   },
 
   /**
    * 토큰 갱신
+   * TODO: 백엔드 API 연동 필요
    */
   refreshToken: async (refreshToken: string): Promise<AuthResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    
-    const user = createMockUser(1);
-    return {
-      accessToken: `mock-access-token-${Date.now()}`,
-      refreshToken: `mock-refresh-token-${Date.now()}`,
-      user,
-    };
+    throw new Error('토큰 갱신 API가 아직 구현되지 않았습니다');
   },
 
   /**
    * 현재 사용자 정보 조회 (토큰으로)
+   * GET /api/users/profile
+   * 
+   * 주의: 백엔드에 해당 엔드포인트가 없을 수 있음
+   * 이 경우 에러를 던지고, 호출하는 쪽에서 처리해야 함
    */
   getCurrentUser: async (): Promise<UserResponse> => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    const savedUser = tokenStorage.getUser();
-    if (savedUser) {
-      return savedUser;
+    try {
+      // 백엔드 응답을 받아서 구조 확인
+      const backendResponse = await apiRequest<any>('/api/users/profile', {
+        method: 'GET',
+      });
+      
+      // 백엔드 응답 검증
+      if (!backendResponse) {
+        throw new Error('백엔드 응답이 비어있습니다');
+      }
+      
+      // 백엔드 응답을 프론트엔드 타입으로 변환
+      // 백엔드 필드명이 다를 수 있으므로 안전하게 변환
+      const user: UserResponse = {
+        id: backendResponse.id ?? backendResponse.userId ?? 0,
+        email: backendResponse.email ?? null,
+        name: backendResponse.name ?? backendResponse.username ?? '',
+        nickname: backendResponse.nickname ?? '',
+        profileImageUrl: backendResponse.profileImageUrl ?? backendResponse.profile_image_url ?? null,
+        phone: backendResponse.phone ?? backendResponse.phoneNumber ?? backendResponse.phone_number ?? null,
+      };
+      
+      // 사용자 정보를 localStorage에 저장
+      tokenStorage.setUser(user);
+      
+      return user;
+    } catch (error) {
+      console.error('getCurrentUser 실패:', error);
+      
+      // 401 Unauthorized인 경우 토큰이 만료되었거나 유효하지 않음
+      if (error instanceof Error && (error.message.includes('401') || error.message.includes('Unauthorized'))) {
+        // 토큰 삭제
+        tokenStorage.clearAll();
+        throw new Error('로그인이 필요합니다');
+      }
+      
+      // 404 Not Found인 경우 엔드포인트가 없을 수 있음
+      if (error instanceof Error && (error.message.includes('404') || error.message.includes('Not Found'))) {
+        throw new Error('사용자 정보 조회 API가 없습니다');
+      }
+      
+      // 500 Internal Server Error인 경우 백엔드 에러
+      if (error instanceof Error && (error.message.includes('500') || error.message.includes('Internal Server Error'))) {
+        throw new Error('서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+      }
+      
+      // 다른 에러는 그대로 던짐
+      throw error;
     }
-    // 토큰이 없으면 에러 발생 (실제로는 인증 필요)
-    throw new Error('로그인이 필요합니다');
+  },
+
+  /**
+   * OAuth 로그인 시작 (백엔드로 리다이렉트)
+   * @param provider OAuth 제공자 (google, kakao, naver)
+   * @returns OAuth 로그인 페이지 URL
+   */
+  oauthLogin: async (provider: OAuthProvider): Promise<string> => {
+    // 백엔드 API 엔드포인트
+    // 백엔드에서 OAuth 로그인 엔드포인트를 제공한다고 가정
+    // 예: GET /oauth2/{provider} -> OAuth 제공자 페이지로 리다이렉트
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+    const redirectUrl = `${API_BASE_URL}/oauth2/authorization/${provider}`;
+    
+    // 실제 백엔드 연동 시:
+    // 1. 백엔드가 OAuth 제공자 로그인 페이지로 리다이렉트
+    // 2. 사용자 인증 후 백엔드 콜백 URL로 돌아옴
+    // 3. 백엔드에서 토큰 발급 후 프론트엔드 콜백 URL로 리다이렉트
+    //    예: /auth/oauth/callback?provider={provider}&code={code}&state={state}
+    
+    return redirectUrl;
+  },
+
+  /**
+   * OAuth 콜백 처리 (백엔드에서 코드를 받아 토큰으로 교환)
+   * @param provider OAuth 제공자
+   * @param code OAuth 인증 코드
+   * @param state OAuth state (CSRF 방지용)
+   * @returns 인증 정보 (accessToken, refreshToken, user)
+   */
+  oauthCallback: async (
+    provider: OAuthProvider,
+    code: string,
+    state?: string
+  ): Promise<AuthResponse> => {
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+    
+    try {
+      // 백엔드 OAuth 콜백 엔드포인트 호출
+      // POST /oauth2/callback/{provider}
+      // Body: { code: string, state?: string }
+      const response = await fetch(`${API_BASE_URL}/oauth2/callback/${provider}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code, state }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'OAuth 인증 실패' }));
+        throw new Error(errorData.message || 'OAuth 인증에 실패했습니다');
+      }
+
+      const data = await response.json();
+      
+      // 백엔드 응답 형식에 맞게 변환
+      // 백엔드에서 AuthResponse 형식으로 반환한다고 가정
+      // 예: { accessToken: string, refreshToken?: string, user: UserResponse }
+      return {
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        user: data.user,
+      };
+    } catch (error) {
+      console.error('OAuth 콜백 처리 실패:', error);
+      throw error instanceof Error ? error : new Error('OAuth 인증에 실패했습니다');
+    }
+  },
+
+  /**
+   * 프로필 업데이트
+   * PATCH /api/users/update-profile
+   * 백엔드 응답: {"newAccessToken": "..."}
+   */
+  updateProfile: async (data: ProfileUpdateRequest): Promise<UserResponse> => {
+    try {
+      // 백엔드 DTO에 맞게 필드명 변환
+      const requestData: any = {
+        username: data.username || data.name,  // username 우선, 없으면 name 사용
+        nickname: data.nickname,
+        phoneNumber: data.phoneNumber || data.phone,  // phoneNumber 우선, 없으면 phone 사용
+        profileImageUrl: data.profileImageUrl,
+      };
+      
+      const backendResponse = await apiRequest<any>('/api/users/update-profile', {
+        method: 'PATCH',
+        body: JSON.stringify(requestData),
+      });
+
+      // 백엔드 응답에서 newAccessToken 추출 및 저장
+      if (backendResponse.newAccessToken) {
+        tokenStorage.setAccessToken(backendResponse.newAccessToken);
+        console.log('새로운 accessToken이 저장되었습니다');
+      }
+
+      // 사용자 정보는 별도로 조회 (백엔드가 newAccessToken만 반환하는 경우)
+      // 또는 응답에 사용자 정보가 포함되어 있다면 사용
+      let user: UserResponse;
+      
+      if (backendResponse.id || backendResponse.email) {
+        // 응답에 사용자 정보가 포함된 경우
+        user = {
+          id: backendResponse.id ?? backendResponse.userId ?? 0,
+          email: backendResponse.email ?? null,
+          name: backendResponse.name ?? backendResponse.username ?? '',
+          nickname: backendResponse.nickname ?? '',
+          profileImageUrl: backendResponse.profileImageUrl ?? backendResponse.profile_image_url ?? null,
+          phone: backendResponse.phone ?? backendResponse.phoneNumber ?? backendResponse.phone_number ?? null,
+          roleLevel: backendResponse.roleLevel ?? backendResponse.role_level ?? 0,
+        };
+      } else {
+        // 응답에 사용자 정보가 없는 경우, 새 토큰으로 사용자 정보 조회
+        user = await authApi.getCurrentUser();
+      }
+
+      tokenStorage.setUser(user);
+      return user;
+    } catch (error) {
+      console.error('프로필 업데이트 실패:', error);
+      throw error;
+    }
   },
 };
 
-// API 함수들 - 설문 관련
+// API 함수들 - 배송지 관련
+export const addressApi = {
+  /**
+   * 기본 배송지 조회
+   * GET /api/addresses/default
+   * - 기본 배송지 있으면 200 + AddressResponse
+   * - 없으면 204 No Content
+   */
+  getDefaultAddress: async (): Promise<AddressResponse | null> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/addresses/default`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(tokenStorage.getAccessToken() ? {
+            'Authorization': `Bearer ${tokenStorage.getAccessToken()?.trim().replace(/^["']|["']$/g, '')}`,
+          } : {}),
+        },
+        credentials: 'include',
+      });
+
+      if (response.status === 204) {
+        return null; // 기본 배송지 없음
+      }
+
+      if (!response.ok) {
+        throw new Error(`배송지 조회 실패: ${response.status}`);
+      }
+
+      const backendResponse = await response.json();
+      return {
+        id: backendResponse.id || 0,
+        recipientName: backendResponse.recipientName || backendResponse.recipient_name || '',
+        phone: backendResponse.phone || '',
+        zipCode: backendResponse.zipCode || backendResponse.zip_code || '',
+        address: backendResponse.address1 || backendResponse.address || '', // 백엔드: address1
+        detailAddress: backendResponse.address2 || backendResponse.detailAddress || backendResponse.detail_address || '', // 백엔드: address2
+        isDefault: backendResponse.isDefault !== undefined ? backendResponse.isDefault : (backendResponse.is_default !== undefined ? backendResponse.is_default : false),
+      };
+    } catch (error) {
+      console.error('기본 배송지 조회 실패:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 내 배송지 목록 조회
+   * GET /api/addresses
+   */
+  getMyAddresses: async (): Promise<AddressResponse[]> => {
+    try {
+      const backendResponse = await apiRequest<any[]>('/api/addresses', {
+        method: 'GET',
+      });
+
+      return backendResponse.map((address: any) => ({
+        id: address.id || 0,
+        recipientName: address.recipientName || address.recipient_name || '',
+        phone: address.phone || '',
+        zipCode: address.zipCode || address.zip_code || '',
+        address: address.address1 || address.address || '', // 백엔드: address1
+        detailAddress: address.address2 || address.detailAddress || address.detail_address || '', // 백엔드: address2
+        isDefault: address.isDefault !== undefined ? address.isDefault : (address.is_default !== undefined ? address.is_default : false),
+      }));
+    } catch (error) {
+      console.error('배송지 목록 조회 실패:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 배송지 생성
+   * POST /api/addresses
+   * - setAsDefault=true 면 생성과 동시에 기본 배송지로 설정
+   * - 응답: 201 Created + 생성된 배송지 ID
+   */
+  createAddress: async (data: AddressCreateRequest): Promise<number> => {
+    try {
+      // 백엔드 DTO 필드명에 맞춰 데이터 변환
+      // 백엔드: label, recipientName, phone, zipCode, address1, address2, setAsDefault
+      const requestData: any = {
+        recipientName: data.recipientName,
+        phone: data.phone,
+        zipCode: data.zipCode,
+        address1: data.address, // 프론트엔드의 address → 백엔드의 address1
+        address2: data.detailAddress, // 프론트엔드의 detailAddress → 백엔드의 address2
+      };
+      
+      // label은 선택사항이므로 값이 있을 때만 추가
+      if (data.label) {
+        requestData.label = data.label;
+      }
+      
+      // setAsDefault는 boolean이므로 undefined가 아닐 때만 추가
+      if (data.setAsDefault !== undefined) {
+        requestData.setAsDefault = data.setAsDefault;
+      }
+
+      const addressId = await apiRequest<number>('/api/addresses', {
+        method: 'POST',
+        body: JSON.stringify(requestData),
+      });
+
+      return addressId;
+    } catch (error) {
+      console.error('배송지 생성 실패:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 배송지 상세 조회
+   * GET /api/addresses/{addressId}
+   */
+  getAddress: async (addressId: number): Promise<AddressResponse> => {
+    try {
+      const backendResponse = await apiRequest<any>(`/api/addresses/${addressId}`, {
+        method: 'GET',
+      });
+
+      return {
+        id: backendResponse.id || addressId,
+        recipientName: backendResponse.recipientName || backendResponse.recipient_name || '',
+        phone: backendResponse.phone || '',
+        zipCode: backendResponse.zipCode || backendResponse.zip_code || '',
+        address: backendResponse.address1 || backendResponse.address || '', // 백엔드: address1
+        detailAddress: backendResponse.address2 || backendResponse.detailAddress || backendResponse.detail_address || '', // 백엔드: address2
+        isDefault: backendResponse.isDefault !== undefined ? backendResponse.isDefault : (backendResponse.is_default !== undefined ? backendResponse.is_default : false),
+      };
+    } catch (error) {
+      console.error('배송지 조회 실패:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 배송지 수정
+   * PATCH /api/addresses/{addressId}
+   */
+  updateAddress: async (
+    addressId: number,
+    data: AddressUpdateRequest
+  ): Promise<void> => {
+    try {
+      const requestData: any = {};
+      if (data.recipientName !== undefined) requestData.recipientName = data.recipientName;
+      if (data.phone !== undefined) requestData.phone = data.phone;
+      if (data.zipCode !== undefined) requestData.zipCode = data.zipCode;
+      if (data.address !== undefined) requestData.address1 = data.address; // 백엔드: address1
+      if (data.detailAddress !== undefined) requestData.address2 = data.detailAddress; // 백엔드: address2
+
+      await apiRequest(`/api/addresses/${addressId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(requestData),
+      });
+    } catch (error) {
+      console.error('배송지 수정 실패:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 배송지 삭제
+   * DELETE /api/addresses/{addressId}
+   */
+  deleteAddress: async (addressId: number): Promise<void> => {
+    try {
+      await apiRequest(`/api/addresses/${addressId}`, {
+        method: 'DELETE',
+      });
+    } catch (error) {
+      console.error('배송지 삭제 실패:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 기본 배송지 설정
+   * PUT /api/addresses/{addressId}/default
+   * - 기존 기본 배송지는 해제되고, 지정한 addressId가 기본이 됨
+   */
+  setDefaultAddress: async (addressId: number): Promise<void> => {
+    try {
+      await apiRequest(`/api/addresses/${addressId}/default`, {
+        method: 'PUT',
+      });
+    } catch (error) {
+      console.error('기본 배송지 설정 실패:', error);
+      throw error;
+    }
+  },
+};
+
+// 설문 관련 API
 export const surveyApi = {
   /**
-   * 설문 결과 저장 — PATCH /api/users/survey
+   * 성향 설문 결과 저장
+   * PATCH /api/users/survey
    */
-  saveSurvey: async (userType: UserType): Promise<void> => {
-    const token = tokenStorage.getAccessToken();
-    if (!token) throw new Error('로그인이 필요합니다');
-
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/survey`, {
+  saveSurvey: async (userType: string): Promise<void> => {
+    await apiRequest('/api/users/survey', {
       method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
       body: JSON.stringify({ userType }),
     });
-
-    if (!res.ok) throw new Error('설문 저장에 실패했습니다');
-
-    // 로컬 유저 정보도 업데이트
-    const saved = tokenStorage.getUser();
-    if (saved) tokenStorage.setUser({ ...saved, userType });
   },
 };
+

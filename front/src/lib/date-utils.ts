@@ -73,3 +73,71 @@ export function isPastDate(dateString: string | null | undefined): boolean {
   }
   return date.getTime() < Date.now();
 }
+
+/**
+ * ISO 문자열을 datetime-local 형식으로 변환 (한국 시간 기준)
+ * @param isoString ISO 8601 형식의 날짜 문자열 (예: "2026-01-09T05:06:00.000Z")
+ * @returns datetime-local 형식 문자열 (예: "2026-01-09T14:06")
+ */
+export function isoToDatetimeLocal(isoString: string): string {
+  const date = new Date(isoString);
+  if (isNaN(date.getTime())) {
+    return "";
+  }
+  
+  // 로컬 시간대로 변환하여 datetime-local 형식으로 반환
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+/**
+ * ISO 문자열을 date 형식으로 변환 (한국 시간 기준)
+ * @param isoString ISO 8601 형식의 날짜 문자열
+ * @returns date 형식 문자열 (예: "2026-01-09")
+ */
+export function isoToDateLocal(isoString: string): string {
+  const date = new Date(isoString);
+  if (isNaN(date.getTime())) {
+    return "";
+  }
+  
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}`;
+}
+
+/** 한국 시간(Asia/Seoul)으로 날짜·시간 포맷 (백엔드 UTC 응답 표시용) */
+const KOREA_OPTIONS: Intl.DateTimeFormatOptions = {
+  timeZone: 'Asia/Seoul',
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+};
+
+/**
+ * ISO 형식이지만 Z/오프셋이 없으면 백엔드가 UTC로 준 값으로 간주하고 UTC로 파싱
+ * (예: "2026-02-05T11:30:00" → 11:30 UTC → 한국 시간 20:30으로 표시)
+ */
+function parseAsUtcIfNoZone(dateString: string): string {
+  if (!dateString || typeof dateString !== 'string') return dateString;
+  const trimmed = dateString.trim();
+  if (/Z|[+-]\d{2}:?\d{2}$/.test(trimmed)) return trimmed;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(trimmed)) return trimmed + (trimmed.includes('.') ? 'Z' : '.000Z');
+  return trimmed;
+}
+
+export function formatDateTimeInKorea(dateString: string | null | undefined): string {
+  const toParse = dateString ? parseAsUtcIfNoZone(dateString) : dateString;
+  const date = parseDate(toParse);
+  if (!isValidDate(date)) return '날짜 오류';
+  return date.toLocaleString('ko-KR', KOREA_OPTIONS);
+}

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, use } from "react"
 import { useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -16,11 +16,22 @@ import { MultiImageUpload } from "@/src/components/multi-image-upload"
 import { RewardTierForm, RewardTierFormData } from "@/src/components/reward-tier-form"
 import { projectApi } from "@/src/services/api"
 import { projectCreateSchema, ProjectCreateFormData } from "@/src/lib/validations"
+import { canEditProject } from "@/src/lib/permissions"
+import { useAuth } from "@/src/contexts/auth-context"
 import { toast } from "sonner"
+import { isoToDateLocal } from "@/src/lib/date-utils"
 
-export default function CreateProjectPage() {
+export default function EditProjectPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params)
   const router = useRouter()
+  const { user } = useAuth()
+  const projectId = parseInt(id, 10)
+  
+  const [project, setProject] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
   const [imageFiles, setImageFiles] = useState<File[]>([])
+  const [existingImageUrls, setExistingImageUrls] = useState<string[]>([])
+  const [removedExistingImageIndices, setRemovedExistingImageIndices] = useState<Set<number>>(new Set())
   const [rewardTiers, setRewardTiers] = useState<RewardTierFormData[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [startDate, setStartDate] = useState<string>("")
@@ -33,20 +44,78 @@ export default function CreateProjectPage() {
     handleSubmit,
     formState: { errors },
     setValue,
+    reset,
   } = useForm<ProjectCreateFormData>({
     resolver: zodResolver(projectCreateSchema),
-    defaultValues: {
-      title: "",
-      description: "",
-      targetAmount: undefined,
-      startAt: "",
-      endAt: "",
-      rewardTiers: [],
-      categoryPath: undefined,
-      tags: undefined,
-      summary: undefined,
-    },
   })
+
+  // 프로젝트 데이터 로드
+  useEffect(() => {
+    const loadProject = async () => {
+      if (isNaN(projectId)) {
+        toast.error("유효하지 않은 프로젝트 ID입니다")
+        router.push("/")
+        return
+      }
+
+      try {
+        setLoading(true)
+        const projectData = await projectApi.getProject(projectId)
+        
+        // 권한 체크
+        if (!canEditProject(projectData, user)) {
+          toast.error("수정할 수 없는 프로젝트입니다")
+          router.push(`/project/${projectId}`)
+          return
+        }
+
+        setProject(projectData)
+
+        // 기존 이미지 URL 저장
+        if (projectData.imageUrls && projectData.imageUrls.length > 0) {
+          setExistingImageUrls(projectData.imageUrls)
+        } else if (projectData.imageUrl) {
+          setExistingImageUrls([projectData.imageUrl])
+        }
+
+        // 날짜를 YYYY-MM-DD 형식으로 변환 (한국 시간 기준)
+        const startDateStr = isoToDateLocal(projectData.startAt)
+        const endDateStr = isoToDateLocal(projectData.endAt)
+
+        // 리워드 티어 데이터 변환
+        const tiers: RewardTierFormData[] = projectData.rewardTiers.map((tier) => ({
+          title: tier.title,
+          description: tier.description,
+          price: tier.price,
+          limitQuantity: tier.limitQuantity,
+        }))
+
+        setRewardTiers(tiers)
+        setStartDate(startDateStr)
+
+        // 폼에 데이터 채우기
+        reset({
+          title: projectData.title,
+          description: projectData.description,
+          targetAmount: projectData.targetAmount,
+          startAt: startDateStr,
+          endAt: endDateStr,
+          rewardTiers: tiers as any,
+          categoryPath: projectData.categoryPath || undefined,
+          tags: projectData.tags || undefined,
+          summary: projectData.summary || undefined,
+        })
+      } catch (error) {
+        console.error("프로젝트 로드 실패:", error)
+        toast.error("프로젝트를 불러오는데 실패했습니다")
+        router.push("/")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadProject()
+  }, [projectId, router, user, reset])
 
   // 리워드 티어 변경 시 폼에 반영
   useEffect(() => {
@@ -54,26 +123,19 @@ export default function CreateProjectPage() {
   }, [rewardTiers, setValue])
 
   const onSubmit = async (data: ProjectCreateFormData) => {
+    if (!project) return
+
     try {
       setIsSubmitting(true)
 
-      // 이미지 파일 필수 체크
-      if (imageFiles.length === 0) {
-        toast.error("프로젝트 이미지를 최소 1개 이상 업로드해주세요")
-        setIsSubmitting(false)
-        return
-      }
-
-      // 이미지 파일들을 base64로 변환 (localStorage 저장용)
+      // 이미지 처리: 새로 업로드한 파일이 있으면 base64로 변환, 없으면 기존 이미지 유지
       let imageUrls: string[] | null = null
       if (imageFiles.length > 0) {
-        // Mock: 실제로는 FormData로 백엔드에 업로드
-        // localStorage 저장을 위해 base64로 변환 (크기 제한 적용)
+        // 새 이미지 업로드
         imageUrls = await Promise.all(
           imageFiles.map(
             (file) =>
               new Promise<string>((resolve, reject) => {
-                // 파일 크기 체크 (5MB 제한)
                 if (file.size > 5 * 1024 * 1024) {
                   toast.error(`이미지 크기가 너무 큽니다: ${file.name} (최대 5MB)`)
                   reject(new Error(`이미지 크기 초과: ${file.name}`))
@@ -83,7 +145,6 @@ export default function CreateProjectPage() {
                 const reader = new FileReader()
                 reader.onload = () => {
                   const result = reader.result as string
-                  // base64 문자열 크기 체크 (약 2MB 제한)
                   if (result.length > 2 * 1024 * 1024) {
                     toast.warning(`이미지 ${file.name}의 크기가 큽니다. 저장 시 문제가 발생할 수 있습니다.`)
                   }
@@ -94,8 +155,11 @@ export default function CreateProjectPage() {
               })
           )
         )
+      } else if (existingImageUrls.length > 0) {
+        // 기존 이미지 유지
+        imageUrls = existingImageUrls
       }
-      // 첫 번째 이미지를 imageUrl로 설정 (하위 호환성)
+
       const imageUrl = imageUrls && imageUrls.length > 0 ? imageUrls[0] : null
 
       // 날짜 유효성 검사 및 ISO 형식으로 변환
@@ -104,42 +168,21 @@ export default function CreateProjectPage() {
         return
       }
 
-      // date input은 YYYY-MM-DD 형식이므로 시간을 추가
       const startDateStr = data.startAt.trim()
       const endDateStr = data.endAt.trim()
 
-      if (!startDateStr || !endDateStr) {
-        toast.error("시작일과 종료일을 모두 선택해주세요")
-        return
-      }
-
-      // date input은 YYYY-MM-DD 형식이므로 시간을 추가
-      // 로컬 시간대를 명시적으로 처리하기 위해 시간을 추가
       const startDateWithTime = startDateStr.includes("T") ? startDateStr : `${startDateStr}T00:00:00`
       const endDateWithTime = endDateStr.includes("T") ? endDateStr : `${endDateStr}T23:59:59`
 
-      console.log("날짜 변환 시작:", { startDateStr, endDateStr, startDateWithTime, endDateWithTime })
-
-      // Date 객체 생성
       const startDateObj = new Date(startDateWithTime)
       const endDateObj = new Date(endDateWithTime)
 
-      console.log("Date 객체 생성 결과:", { 
-        startDateObj: startDateObj.toString(), 
-        endDateObj: endDateObj.toString(),
-        startIsValid: !isNaN(startDateObj.getTime()),
-        endIsValid: !isNaN(endDateObj.getTime())
-      })
-
-      // Invalid Date 체크
       if (isNaN(startDateObj.getTime())) {
-        console.error("시작일 파싱 실패:", startDateStr, startDateWithTime)
         toast.error(`유효하지 않은 시작일입니다: ${startDateStr}`)
         return
       }
 
       if (isNaN(endDateObj.getTime())) {
-        console.error("종료일 파싱 실패:", endDateStr, endDateWithTime)
         toast.error(`유효하지 않은 종료일입니다: ${endDateStr}`)
         return
       }
@@ -149,56 +192,66 @@ export default function CreateProjectPage() {
         return
       }
 
-      // ISO 형식으로 변환
-      let startDateISO: string
-      let endDateISO: string
+      const startDateISO = startDateObj.toISOString()
+      const endDateISO = endDateObj.toISOString()
 
-      try {
-        startDateISO = startDateObj.toISOString()
-        endDateISO = endDateObj.toISOString()
-        console.log("ISO 변환 성공:", { startDateISO, endDateISO })
-      } catch (error) {
-        console.error("ISO 변환 실패:", error, { 
-          startDateObj, 
-          endDateObj,
-          startDateStr,
-          endDateStr
-        })
-        toast.error("날짜 변환 중 오류가 발생했습니다")
-        return
-      }
-
-      const projectData = {
+      // 프로젝트 수정
+      const updatedProject = await projectApi.updateProject(projectId, {
         ...data,
         startAt: startDateISO,
         endAt: endDateISO,
         imageUrl,
         imageUrls,
         rewardTiers: rewardTiers.map((tier) => ({
-          id: 0,
+          id: 0, // 수정 시 ID는 백엔드에서 처리
           title: tier.title,
           description: tier.description,
           price: tier.price,
           limitQuantity: tier.limitQuantity,
-          soldQuantity: 0,
+          soldQuantity: 0, // 수정 시 판매량은 유지되어야 하지만 Mock API에서는 0으로 설정
         })),
-        currentAmount: 0,
-        status: "OPEN" as const, // 프로젝트 생성 시 바로 진행 중 상태로 설정
-      }
+        // currentAmount와 status는 수정하지 않음
+      })
 
-      console.log("API 호출 전 데이터:", projectData)
-      
-      const createdProject = await projectApi.createProject(projectData)
-      console.log("API 호출 성공:", createdProject)
-      
-      toast.success("프로젝트가 생성되었습니다!")
-      router.push(`/project/${createdProject.id}`)
+      toast.success("프로젝트가 수정되었습니다!")
+      router.push(`/project/${projectId}`)
     } catch (error) {
-      console.error("프로젝트 생성 에러:", error)
-      toast.error(error instanceof Error ? error.message : "프로젝트 생성에 실패했습니다")
+      console.error("프로젝트 수정 에러:", error)
+      toast.error(error instanceof Error ? error.message : "프로젝트 수정에 실패했습니다")
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  if (loading) {
+    return (
+      <ProtectedRoute>
+        <div className="min-h-screen bg-background">
+          <Navigation />
+          <main className="container mx-auto px-4 py-8">
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="size-8 animate-spin text-primary" />
+            </div>
+          </main>
+        </div>
+      </ProtectedRoute>
+    )
+  }
+
+  if (!project) {
+    return (
+      <ProtectedRoute>
+        <div className="min-h-screen bg-background">
+          <Navigation />
+          <main className="container mx-auto px-4 py-8">
+            <Alert variant="destructive">
+              <AlertCircle className="size-4" />
+              <AlertDescription>프로젝트를 찾을 수 없습니다</AlertDescription>
+            </Alert>
+          </main>
+        </div>
+      </ProtectedRoute>
+    )
   }
 
   return (
@@ -208,16 +261,22 @@ export default function CreateProjectPage() {
         <main className="container mx-auto px-4 py-8">
           <Card className="mx-auto max-w-4xl">
             <CardHeader>
-              <CardTitle className="text-2xl">새 프로젝트 만들기</CardTitle>
-              <CardDescription>크라우드펀딩 프로젝트를 등록하세요</CardDescription>
+              <CardTitle className="text-2xl">프로젝트 수정</CardTitle>
+              <CardDescription>프로젝트 정보를 수정하세요</CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
                 {/* 프로젝트 이미지 */}
                 <div className="space-y-2">
                   <Label>프로젝트 이미지 *</Label>
-                  <MultiImageUpload value={imageFiles} onChange={setImageFiles} maxImages={3} />
-                  {imageFiles.length === 0 && (
+                  <MultiImageUpload 
+                    value={imageFiles} 
+                    onChange={setImageFiles} 
+                    maxImages={3}
+                    existingImages={existingImageUrls}
+                    onExistingImagesChange={setRemovedExistingImageIndices}
+                  />
+                  {imageFiles.length === 0 && existingImageUrls.length === 0 && (
                     <p className="text-sm text-muted-foreground">프로젝트를 대표할 이미지를 업로드해주세요</p>
                   )}
                 </div>
@@ -324,7 +383,6 @@ export default function CreateProjectPage() {
                       }
                     })}
                     placeholder="1000000"
-                    defaultValue=""
                   />
                   {errors.targetAmount && (
                     <Alert variant="destructive">
@@ -389,7 +447,7 @@ export default function CreateProjectPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => router.back()}
+                    onClick={() => router.push(`/project/${projectId}`)}
                     disabled={isSubmitting}
                   >
                     취소
@@ -398,10 +456,10 @@ export default function CreateProjectPage() {
                     {isSubmitting ? (
                       <>
                         <Loader2 className="mr-2 size-4 animate-spin" />
-                        생성 중...
+                        수정 중...
                       </>
                     ) : (
-                      "프로젝트 생성"
+                      "프로젝트 수정"
                     )}
                   </Button>
                 </div>

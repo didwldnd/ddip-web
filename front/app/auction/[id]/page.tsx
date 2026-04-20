@@ -9,17 +9,21 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/src/components/ui/avatar"
 import { Input } from "@/src/components/ui/input"
 import { Label } from "@/src/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/src/components/ui/tabs"
-import { AlertCircle, Clock, Gavel, Heart, Share2, MapPin, Loader2 } from "lucide-react"
+import { AlertCircle, Clock, Gavel, Heart, Share2, MapPin, Loader2, ChevronLeft, ChevronRight, Edit, X } from "lucide-react"
 import Image from "next/image"
 import { useState, useEffect, use, useRef } from "react"
+import { useRouter } from "next/navigation"
 import { Alert, AlertDescription } from "@/src/components/ui/alert"
 import { auctionApi } from "@/src/services/api"
-import { AuctionResponse } from "@/src/types/api"
+import { AuctionResponse, BidSummary } from "@/src/types/api"
 import { toast } from "sonner"
 import { useAuth } from "@/src/contexts/auth-context"
-import { BidResponse } from "@/src/types/api"
 import { maskUserId, formatRelativeTime } from "@/src/lib/user-utils"
 import { formatIncrement } from "@/src/lib/format-amount"
+import { isInWishlist, toggleWishlist } from "@/src/lib/wishlist"
+import { canEditAuction, canBidAuction, isAuctionSeller } from "@/src/lib/permissions"
+import { showAuctionNotificationIfNeeded } from "@/src/lib/auction-notifications"
+import { formatDateTimeInKorea } from "@/src/lib/date-utils"
 // 웹소켓 관련 (백엔드 준비되면 주석 해제)
 // import { useAuctionSocket } from "@/src/hooks/useAuctionSocket"
 // import { RealtimeBidList } from "@/src/components/realtime-bid-list"
@@ -27,6 +31,7 @@ import { formatIncrement } from "@/src/lib/format-amount"
 
 export default function AuctionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
+  const router = useRouter()
   const { user } = useAuth()
   const [auction, setAuction] = useState<AuctionResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -34,8 +39,19 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
   const [bidAmount, setBidAmount] = useState(0)
   const [timeLeft, setTimeLeft] = useState("")
   const [isBidding, setIsBidding] = useState(false)
-  const [bidHistory, setBidHistory] = useState<BidResponse[]>([])
+  const [bidHistory, setBidHistory] = useState<BidSummary[]>([])
   const [loadingBids, setLoadingBids] = useState(false)
+  const [isFavorite, setIsFavorite] = useState(false)
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0)
+  
+  // 알림 표시 여부 추적 (중복 알림 방지)
+  const notificationShownRef = useRef<{
+    started?: boolean
+    ended?: boolean
+  }>({})
+  
+  // 페이지 가시성 추적 (백그라운드에서는 알림 표시 안 함)
+  const [isPageVisible, setIsPageVisible] = useState(true)
   
   // 실시간 입찰 내역 (웹소켓 사용 시)
   // const [realtimeBids, setRealtimeBids] = useState<BidPlacedEvent[]>([])
@@ -65,20 +81,12 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
         if (isNaN(auctionId)) {
           throw new Error("유효하지 않은 경매 ID입니다")
         }
+        
         let data = await auctionApi.getAuction(auctionId)
-        
-        // 시작일이 지났는데 SCHEDULED 상태면 RUNNING으로 업데이트
-        const now = new Date()
-        const startTime = new Date(data.startAt)
-        if (data.status === "SCHEDULED" && !isNaN(startTime.getTime()) && startTime <= now) {
-          // 경매가 시작되었으므로 상태 업데이트
-          data = await auctionApi.updateAuction(auctionId, {
-            status: "RUNNING" as const,
-          })
-        }
-        
         setAuction(data)
-        setBidAmount(data.currentPrice + data.bidStep)
+        // bidStep이 없을 경우 기본값 사용 (1000원)
+        const bidStep = data.bidStep || 1000
+        setBidAmount(data.currentPrice + bidStep)
         
         // 입찰 내역도 함께 로드
         try {
@@ -97,6 +105,121 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
 
     loadAuction()
   }, [id])
+
+  // 페이지 가시성 추적 (백그라운드에서는 알림 표시 안 함)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      setIsPageVisible(!document.hidden)
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
+
+  // 경매 상태 주기적 체크 (종료 시간에 따라 동적으로 조정)
+  useEffect(() => {
+    if (!auction) return
+
+    let timeoutId: NodeJS.Timeout | null = null
+
+    const checkStatus = async () => {
+      const auctionId = parseInt(id, 10)
+      if (isNaN(auctionId)) return
+
+        const updatedAuction = await auctionApi.checkAndUpdateAuctionStatus(auctionId)
+        if (updatedAuction && updatedAuction.status !== auction.status) {
+          // 상태가 변경되었으면 경매 정보 새로고침
+          setAuction(updatedAuction)
+          const bidStep = updatedAuction.bidStep || 1000
+          setBidAmount(updatedAuction.currentPrice + bidStep)
+        
+        // 입찰 내역도 새로고침
+        try {
+          const bids = await auctionApi.getBidsByAuction(auctionId)
+          setBidHistory(bids)
+        } catch (err) {
+          console.error("입찰 내역 로드 실패:", err)
+        }
+
+        // 상태 변경 알림 (페이지가 보이고, 최초 한 번만 표시)
+        if (isPageVisible) {
+          showAuctionNotificationIfNeeded(
+            updatedAuction.id,
+            updatedAuction.title,
+            updatedAuction.status,
+            auction.status
+          )
+          
+          // 로컬 ref 업데이트 (중복 방지용)
+          if (updatedAuction.status === 'ENDED') {
+            notificationShownRef.current.ended = true
+          } else if (updatedAuction.status === 'RUNNING') {
+            notificationShownRef.current.started = true
+          }
+        }
+      }
+
+      // 다음 체크 주기 계산
+      const now = new Date().getTime()
+      const startTime = new Date(auction.startAt).getTime()
+      const endTime = new Date(auction.endAt).getTime()
+      
+      // 시작 시간까지의 거리
+      const distanceToStart = startTime - now
+      // 종료 시간까지의 거리
+      const distanceToEnd = endTime - now
+      
+      // 가장 가까운 이벤트 시간까지의 거리
+      const minDistance = Math.min(
+        distanceToStart > 0 ? distanceToStart : Infinity,
+        distanceToEnd > 0 ? distanceToEnd : Infinity
+      )
+      
+      let checkInterval: number
+      
+      // 1분 미만: 1초마다 (정확한 타이밍)
+      if (minDistance < 60 * 1000) {
+        checkInterval = 1000
+      }
+      // 5분 미만: 2초마다
+      else if (minDistance < 5 * 60 * 1000) {
+        checkInterval = 2000
+      }
+      // 10분 미만: 5초마다
+      else if (minDistance < 10 * 60 * 1000) {
+        checkInterval = 5000
+      }
+      // 30분 미만: 10초마다
+      else if (minDistance < 30 * 60 * 1000) {
+        checkInterval = 10000
+      }
+      // 그 외: 30초마다
+      else {
+        checkInterval = 30000
+      }
+      
+      // 다음 체크 예약
+      timeoutId = setTimeout(checkStatus, checkInterval)
+    }
+
+    // 즉시 한 번 체크
+    checkStatus()
+
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
+    }
+  }, [id, auction, isPageVisible])
+
+  // 찜하기 상태 동기화
+  useEffect(() => {
+    if (auction) {
+      setIsFavorite(isInWishlist(auction.id, "auction"))
+    }
+  }, [auction])
 
   // 남은 시간 계산
   useEffect(() => {
@@ -140,7 +263,12 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
         }
       } else {
         if (showSeconds) {
-          setTimeLeft(`${minutes}분 ${seconds}초`)
+          // 1분 미만일 때는 초만 표시
+          if (minutes === 0) {
+            setTimeLeft(`${seconds}초`)
+          } else {
+            setTimeLeft(`${minutes}분 ${seconds}초`)
+          }
         } else {
           setTimeLeft(`${minutes}분`)
         }
@@ -164,9 +292,28 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
     if (!auction) return
     setBidAmount((prev) => {
       const newAmount = prev + increment
-      const minBid = auction.currentPrice + auction.bidStep
+      const bidStep = auction.bidStep || 1000
+      const minBid = auction.currentPrice + bidStep
       return Math.max(newAmount, minBid)
     })
+  }
+
+  // 경매 삭제 핸들러 (판매자만 노출, DELETE /api/auction/{auctionId})
+  const handleDeleteAuction = async () => {
+    if (!auction) return
+    if (!isAuctionSeller(auction, user)) return
+
+    if (!confirm("정말로 이 경매를 삭제하시겠습니까? 삭제된 경매는 복구할 수 없습니다.")) {
+      return
+    }
+
+    try {
+      await auctionApi.deleteAuction(auction.id)
+      toast.success("경매가 삭제되었습니다")
+      router.push("/auctions")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "경매 삭제에 실패했습니다")
+    }
   }
 
   const handleBid = async () => {
@@ -178,16 +325,24 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
       return
     }
 
-    if (bidAmount < auction.currentPrice + auction.bidStep) {
-      toast.error(`최소 입찰 금액은 ${(auction.currentPrice + auction.bidStep).toLocaleString()}원입니다`)
+    // 권한 체크
+    if (!canBidAuction(auction, user)) {
+      if (isAuctionSeller(auction, user)) {
+        toast.error("자신의 경매에는 입찰할 수 없습니다")
+      } else {
+        toast.error("입찰할 수 없는 경매입니다")
+      }
       return
     }
 
-    // 실제 상태 확인 (시작일이 지났으면 RUNNING으로 간주)
-    const now = new Date()
-    const startTime = new Date(auction.startAt)
-    const hasStarted = !isNaN(startTime.getTime()) && startTime <= now
-    const canBid = auction.status === "RUNNING" || (auction.status === "SCHEDULED" && hasStarted)
+    const bidStep = auction.bidStep || 1000
+    if (bidAmount < auction.currentPrice + bidStep) {
+      toast.error(`최소 입찰 금액은 ${(auction.currentPrice + bidStep).toLocaleString()}원입니다`)
+      return
+    }
+
+    // 백엔드 상태만 사용: RUNNING일 때만 입찰 가능 (ENDED는 서버가 내려줄 때만)
+    const canBid = auction.status === "RUNNING"
     
     if (!canBid) {
       toast.error("진행 중인 경매에만 입찰할 수 있습니다")
@@ -205,15 +360,25 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
       // }
       
       // Mock API 사용 (웹소켓 미사용 시)
-      const updatedAuction = await auctionApi.placeBid(auctionId, bidAmount)
-      setAuction(updatedAuction)
-      setBidAmount(updatedAuction.currentPrice + updatedAuction.bidStep)
+      const bidResponse = await auctionApi.placeBid(auctionId, { price: bidAmount })
+      const updatedAuction = bidResponse.auction
+      
+      // 입찰 후 경매 정보 새로고침
+      const auctionToUse = await auctionApi.getAuction(auctionId)
+      
+      setAuction(auctionToUse)
+      const bidStep = auctionToUse.bidStep || 1000
+      setBidAmount(auctionToUse.currentPrice + bidStep)
       
       // 입찰 내역 새로고침
       const bids = await auctionApi.getBidsByAuction(auctionId)
       setBidHistory(bids)
       
-      toast.success(`입찰이 완료되었습니다! 현재 입찰가: ${updatedAuction.currentPrice.toLocaleString()}원`)
+      if (auctionToUse.status === 'ENDED') {
+        toast.success(`입찰이 완료되었습니다! 경매가 종료되었습니다. (최종가: ${auctionToUse.currentPrice.toLocaleString()}원)`)
+      } else {
+        toast.success(`입찰이 완료되었습니다! 현재 입찰가: ${auctionToUse.currentPrice.toLocaleString()}원`)
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "입찰 중 오류가 발생했습니다")
     } finally {
@@ -271,19 +436,8 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
     )
   }
 
-  // 시작일이 지났는지 확인하여 실제 상태 결정
-  const now = new Date()
-  const hasStarted = startTime <= now
-  const hasEnded = endTime <= now
-  
-  // 실제 경매 상태 계산 (시작일이 지났으면 RUNNING, 종료일이 지났으면 ENDED)
-  let actualStatus = auction.status
-  if (hasEnded && auction.status !== "ENDED" && auction.status !== "CANCELED") {
-    actualStatus = "ENDED" as const
-  } else if (hasStarted && auction.status === "SCHEDULED") {
-    actualStatus = "RUNNING" as const
-  }
-  
+  // 백엔드에서 내려준 상태만 사용 (서버 시간 기준으로 ENDED 전환되므로 클라이언트에서 덮어쓰지 않음)
+  const actualStatus = auction.status
   const isLive = actualStatus === "RUNNING"
 
   return (
@@ -294,27 +448,83 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
         <div className="grid gap-8 lg:grid-cols-3">
           {/* Main content */}
           <div className="lg:col-span-2">
-            {/* Hero image */}
-            <div className="relative mb-6 aspect-video overflow-hidden rounded-xl bg-muted">
-              <Image
-                src={auction.imageUrl || "/placeholder.svg"}
-                alt={auction.title}
-                fill
-                className="object-cover"
-              />
-              <div className="absolute left-4 top-4 flex gap-2">
-                <Badge className="bg-secondary text-secondary-foreground">경매</Badge>
-                {isLive && (
-                  <Badge className="animate-pulse bg-destructive text-destructive-foreground">LIVE</Badge>
-                )}
-                {auction.status === "ENDED" && (
-                  <Badge variant="secondary">종료됨</Badge>
-                )}
-                {auction.status === "CANCELED" && (
-                  <Badge variant="destructive">취소됨</Badge>
-                )}
-              </div>
-            </div>
+            {/* Hero image gallery */}
+            {(() => {
+              const images = auction.imageUrls && auction.imageUrls.length > 0
+                ? auction.imageUrls
+                : auction.imageUrl
+                  ? [auction.imageUrl]
+                  : auction.thumbnailImageUrl
+                    ? [auction.thumbnailImageUrl]
+                    : ["/placeholder.svg"]
+              const currentSrc = images[selectedImageIndex] || "/placeholder.svg"
+              const isExternalUrl = currentSrc.startsWith("http://") || currentSrc.startsWith("https://")
+              const hasMultipleImages = images.length > 1
+
+              return (
+                <div className="relative mb-6 aspect-video overflow-hidden rounded-xl bg-muted">
+                  <Image
+                    src={currentSrc}
+                    alt={auction.title}
+                    fill
+                    className="object-cover"
+                    unoptimized={isExternalUrl}
+                  />
+                  
+                  {/* 이미지 네비게이션 버튼 */}
+                  {hasMultipleImages && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="absolute left-4 top-1/2 -translate-y-1/2 bg-background/80 backdrop-blur-sm hover:bg-background"
+                        onClick={() => setSelectedImageIndex((prev) => (prev - 1 + images.length) % images.length)}
+                      >
+                        <ChevronLeft className="size-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="absolute right-4 top-1/2 -translate-y-1/2 bg-background/80 backdrop-blur-sm hover:bg-background"
+                        onClick={() => setSelectedImageIndex((prev) => (prev + 1) % images.length)}
+                      >
+                        <ChevronRight className="size-4" />
+                      </Button>
+                      
+                      {/* 이미지 인디케이터 */}
+                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+                        {images.map((_, index) => (
+                          <button
+                            key={index}
+                            type="button"
+                            className={`h-2 rounded-full transition-all ${
+                              index === selectedImageIndex
+                                ? "w-8 bg-primary"
+                                : "w-2 bg-background/50 hover:bg-background/80"
+                            }`}
+                            onClick={() => setSelectedImageIndex(index)}
+                            aria-label={`이미지 ${index + 1}로 이동`}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  
+                  <div className="absolute left-4 top-4 flex gap-2">
+                    <Badge className="bg-secondary text-secondary-foreground">경매</Badge>
+                    {isLive && (
+                      <Badge className="animate-pulse bg-destructive text-destructive-foreground">LIVE</Badge>
+                    )}
+                    {auction.status === "ENDED" && (
+                      <Badge variant="secondary">종료됨</Badge>
+                    )}
+                    {auction.status === "CANCELED" && (
+                      <Badge variant="destructive">취소됨</Badge>
+                    )}
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* Title and actions */}
             <div className="mb-6">
@@ -322,14 +532,51 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
               <p className="mb-4 text-pretty text-lg text-muted-foreground">{auction.description}</p>
 
               <div className="flex flex-wrap gap-3">
-                <Button variant="outline" size="sm">
-                  <Heart className="mr-2 size-4" />
-                  관심 등록
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    if (!auction) return
+                    const newState = toggleWishlist(auction.id, "auction")
+                    setIsFavorite(newState)
+                    if (newState) {
+                      toast.success("찜하기에 추가되었습니다")
+                    } else {
+                      toast.info("찜하기에서 제거되었습니다")
+                    }
+                  }}
+                >
+                  <Heart className={`mr-2 size-4 ${isFavorite ? "fill-red-500 text-red-500" : ""}`} />
+                  찜하기
                 </Button>
                 <Button variant="outline" size="sm">
                   <Share2 className="mr-2 size-4" />
                   공유하기
                 </Button>
+                
+                {/* 판매자 전용 버튼 */}
+                {canEditAuction(auction, user) && (
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      router.push(`/auction/${auction.id}/edit`)
+                    }}
+                  >
+                    <Edit className="mr-2 size-4" />
+                    수정하기
+                  </Button>
+                )}
+                {isAuctionSeller(auction, user) && (
+                  <Button 
+                    variant="destructive" 
+                    size="sm"
+                    onClick={handleDeleteAuction}
+                  >
+                    <X className="mr-2 size-4" />
+                    삭제하기
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -385,9 +632,11 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                       </div>
                       <div className="flex items-center justify-between border-b pb-3">
                         <span className="font-medium">입찰 단위</span>
-                        <span className="text-muted-foreground">{auction.bidStep.toLocaleString()}원</span>
+                        <span className="text-muted-foreground">
+                          {(auction.bidStep || 1000).toLocaleString()}원
+                        </span>
                       </div>
-                      {auction.buyoutPrice && (
+                      {auction.buyoutPrice != null && auction.buyoutPrice > 0 && (
                         <div className="flex items-center justify-between border-b pb-3">
                           <span className="font-medium">즉시 구매가</span>
                           <span className="text-muted-foreground">{auction.buyoutPrice.toLocaleString()}원</span>
@@ -396,27 +645,13 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                       <div className="flex items-center justify-between border-b pb-3">
                         <span className="font-medium">경매 시작</span>
                         <span className="text-muted-foreground">
-                          {isNaN(startTime.getTime()) 
-                            ? "날짜 오류" 
-                            : startTime.toLocaleDateString("ko-KR", { 
-                                year: "numeric", 
-                                month: "long", 
-                                day: "numeric" 
-                              })
-                          }
+                          {formatDateTimeInKorea(auction.startAt)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="font-medium">경매 종료</span>
                         <span className="text-muted-foreground">
-                          {isNaN(endTime.getTime()) 
-                            ? "날짜 오류" 
-                            : endTime.toLocaleDateString("ko-KR", { 
-                                year: "numeric", 
-                                month: "long", 
-                                day: "numeric" 
-                              })
-                          }
+                          {formatDateTimeInKorea(auction.endAt)}
                         </span>
                       </div>
                     </div>
@@ -464,68 +699,70 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
 
                   <Separator />
 
-                  {isLive && (
-                    <div className="space-y-3">
-                      <Label htmlFor="bid-amount">입찰 금액</Label>
-                      <div className="relative">
-                        <Input
-                          id="bid-amount"
-                          type="number"
-                          value={bidAmount}
-                          onChange={(e) => setBidAmount(Number(e.target.value))}
-                          min={auction.currentPrice + auction.bidStep}
-                          step={auction.bidStep}
-                          className="pr-12 text-lg font-semibold"
-                          disabled={isBidding}
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                          원
-                        </span>
-                      </div>
+                  {isLive && canBidAuction(auction, user) && (() => {
+                    const bidStep = auction.bidStep || 1000
+                    return (
+                      <div className="space-y-3">
+                        <Label htmlFor="bid-amount">입찰 금액</Label>
+                        <div className="relative">
+                          <Input
+                            id="bid-amount"
+                            type="number"
+                            value={bidAmount}
+                            onChange={(e) => setBidAmount(Number(e.target.value))}
+                            min={auction.currentPrice + bidStep}
+                            step={bidStep}
+                            className="pr-12 text-lg font-semibold"
+                            disabled={isBidding}
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                            원
+                          </span>
+                        </div>
 
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1 bg-transparent"
-                          onClick={() => handleQuickBid(auction.bidStep * 2)}
-                          disabled={isBidding}
-                        >
-                          {formatIncrement(auction.bidStep * 2)}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1 bg-transparent"
-                          onClick={() => handleQuickBid(auction.bidStep * 4)}
-                          disabled={isBidding}
-                        >
-                          {formatIncrement(auction.bidStep * 4)}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1 bg-transparent"
-                          onClick={() => handleQuickBid(auction.bidStep * 10)}
-                          disabled={isBidding}
-                        >
-                          {formatIncrement(auction.bidStep * 10)}
-                        </Button>
-                      </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 bg-transparent"
+                            onClick={() => handleQuickBid(bidStep * 2)}
+                            disabled={isBidding}
+                          >
+                            {formatIncrement(bidStep * 2)}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 bg-transparent"
+                            onClick={() => handleQuickBid(bidStep * 4)}
+                            disabled={isBidding}
+                          >
+                            {formatIncrement(bidStep * 4)}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 bg-transparent"
+                            onClick={() => handleQuickBid(bidStep * 10)}
+                            disabled={isBidding}
+                          >
+                            {formatIncrement(bidStep * 10)}
+                          </Button>
+                        </div>
 
-                      <Alert>
-                        <AlertCircle className="size-4" />
-                        <AlertDescription className="text-xs">
-                          최소 입찰 단위는 {auction.bidStep.toLocaleString()}원입니다
-                        </AlertDescription>
-                      </Alert>
+                        <Alert>
+                          <AlertCircle className="size-4" />
+                          <AlertDescription className="text-xs">
+                            최소 입찰 단위는 {bidStep.toLocaleString()}원입니다
+                          </AlertDescription>
+                        </Alert>
 
-                      <Button 
-                        size="lg" 
-                        className="w-full" 
-                        onClick={handleBid}
-                        disabled={isBidding || bidAmount < auction.currentPrice + auction.bidStep}
-                      >
+                        <Button 
+                          size="lg" 
+                          className="w-full" 
+                          onClick={handleBid}
+                          disabled={isBidding || bidAmount < auction.currentPrice + bidStep}
+                        >
                         {isBidding ? (
                           <>
                             <Loader2 className="mr-2 size-4 animate-spin" />
@@ -538,8 +775,9 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                           </>
                         )}
                       </Button>
-                    </div>
-                  )}
+                      </div>
+                    )
+                  })()}
 
                   {!isLive && (
                     <Alert>
@@ -550,6 +788,17 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                           : actualStatus === "CANCELED"
                           ? "이 경매는 취소되었습니다"
                           : "경매가 아직 시작되지 않았습니다"}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  
+                  {isLive && !canBidAuction(auction, user) && (
+                    <Alert>
+                      <AlertCircle className="size-4" />
+                      <AlertDescription>
+                        {isAuctionSeller(auction, user)
+                          ? "자신의 경매에는 입찰할 수 없습니다"
+                          : "입찰할 수 없는 경매입니다"}
                       </AlertDescription>
                     </Alert>
                   )}
@@ -565,9 +814,9 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">입찰 단위</span>
-                    <span className="font-semibold">{auction.bidStep.toLocaleString()}원</span>
+                    <span className="font-semibold">{(auction.bidStep || 1000).toLocaleString()}원</span>
                   </div>
-                  {auction.buyoutPrice && (
+                  {auction.buyoutPrice != null && auction.buyoutPrice > 0 && (
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">즉시 구매가</span>
                       <span className="font-semibold">{auction.buyoutPrice.toLocaleString()}원</span>
@@ -576,27 +825,13 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">경매 시작</span>
                     <span className="font-semibold">
-                      {isNaN(startTime.getTime()) 
-                        ? "날짜 오류" 
-                        : startTime.toLocaleDateString("ko-KR", { 
-                            year: "numeric", 
-                            month: "long", 
-                            day: "numeric" 
-                          })
-                      }
+                      {formatDateTimeInKorea(auction.startAt)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">경매 종료</span>
                     <span className="font-semibold">
-                      {isNaN(endTime.getTime()) 
-                        ? "날짜 오류" 
-                        : endTime.toLocaleDateString("ko-KR", { 
-                            year: "numeric", 
-                            month: "long", 
-                            day: "numeric" 
-                          })
-                      }
+                      {formatDateTimeInKorea(auction.endAt)}
                     </span>
                   </div>
                 </CardContent>
@@ -665,7 +900,13 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                                   )}
                                 </div>
                                 <div className="text-xs text-muted-foreground">
-                                  {formatRelativeTime(bid.createdAt)}
+                                  {new Date(bid.createdAt).toLocaleString("ko-KR", {
+                                    month: "short",
+                                    day: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                    second: "2-digit",
+                                  })}
                                 </div>
                               </div>
                             </div>
@@ -673,11 +914,22 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                               <div className="font-semibold text-lg">
                                 {bid.amount.toLocaleString()}원
                               </div>
-                              {index > 0 && (
-                                <div className="text-xs text-muted-foreground">
-                                  +{(bid.amount - bidHistory[index - 1].amount).toLocaleString()}원
-                                </div>
-                              )}
+                              {index < bidHistory.length - 1 && (() => {
+                                // 다음 입찰가 (더 오래된 입찰, index가 클수록 오래됨)
+                                // 입찰 내역이 최신순으로 정렬되어 있으므로, index가 큰 것이 더 오래된 입찰
+                                const nextBid = bidHistory[index + 1]
+                                // 증가액 계산 (현재 입찰가 - 다음 입찰가(더 오래된 입찰))
+                                const increase = bid.amount - nextBid.amount
+                                // 입찰은 항상 증가해야 하므로 양수만 표시
+                                if (increase > 0) {
+                                  return (
+                                    <div className="text-xs font-medium text-green-600 dark:text-green-400">
+                                      +{increase.toLocaleString()}원
+                                    </div>
+                                  )
+                                }
+                                return null
+                              })()}
                             </div>
                           </div>
                         )

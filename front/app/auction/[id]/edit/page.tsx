@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, use } from "react"
 import { useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -15,18 +15,27 @@ import { ProtectedRoute } from "@/src/components/protected-route"
 import { MultiImageUpload } from "@/src/components/multi-image-upload"
 import { auctionApi } from "@/src/services/api"
 import { auctionCreateSchema, AuctionCreateFormData } from "@/src/lib/validations"
-import { AuctionCreateRequest } from "@/src/types/api"
+import { canEditAuction } from "@/src/lib/permissions"
+import { useAuth } from "@/src/contexts/auth-context"
 import { toast } from "sonner"
+import { isoToDatetimeLocal } from "@/src/lib/date-utils"
 
-export default function CreateAuctionPage() {
+export default function EditAuctionPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params)
   const router = useRouter()
+  const { user } = useAuth()
+  const auctionId = parseInt(id, 10)
+  
+  const [auction, setAuction] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
   const [imageFiles, setImageFiles] = useState<File[]>([])
+  const [existingImageUrls, setExistingImageUrls] = useState<string[]>([])
+  const [removedExistingImageIndices, setRemovedExistingImageIndices] = useState<Set<number>>(new Set())
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [startDateTime, setStartDateTime] = useState<string>("")
 
   // 오늘 날짜와 시간을 datetime-local 형식으로 가져오기
   const now = new Date()
-  // datetime-local 형식: YYYY-MM-DDTHH:mm (초 단위 제외)
   const today = now.toISOString().slice(0, 16)
 
   const {
@@ -34,33 +43,114 @@ export default function CreateAuctionPage() {
     handleSubmit,
     formState: { errors },
     watch,
+    reset,
   } = useForm<AuctionCreateFormData>({
     resolver: zodResolver(auctionCreateSchema),
-    defaultValues: {
-      title: "",
-      description: "",
-      startPrice: undefined,
-      bidStep: undefined,
-      buyoutPrice: null,
-      startAt: "",
-      endAt: "",
-    },
   })
 
   const buyoutPrice = watch("buyoutPrice")
 
+  // 경매 데이터 로드
+  useEffect(() => {
+    const loadAuction = async () => {
+      if (isNaN(auctionId)) {
+        toast.error("유효하지 않은 경매 ID입니다")
+        router.push("/")
+        return
+      }
+
+      try {
+        setLoading(true)
+        const auctionData = await auctionApi.getAuction(auctionId)
+        
+        // 권한 체크
+        if (!canEditAuction(auctionData, user)) {
+          toast.error("수정할 수 없는 경매입니다")
+          router.push(`/auction/${auctionId}`)
+          return
+        }
+
+        setAuction(auctionData)
+
+        // 기존 이미지 URL 저장
+        if (auctionData.imageUrls && auctionData.imageUrls.length > 0) {
+          setExistingImageUrls(auctionData.imageUrls)
+        } else if (auctionData.imageUrl) {
+          setExistingImageUrls([auctionData.imageUrl])
+        }
+
+        // 날짜를 datetime-local 형식으로 변환 (한국 시간 기준)
+        const startDateStr = isoToDatetimeLocal(auctionData.startAt)
+        const endDateStr = isoToDatetimeLocal(auctionData.endAt)
+
+        setStartDateTime(startDateStr)
+
+        // 폼에 데이터 채우기
+        reset({
+          title: auctionData.title,
+          description: auctionData.description,
+          startPrice: auctionData.startPrice,
+          bidStep: auctionData.bidStep,
+          buyoutPrice: auctionData.buyoutPrice,
+          startAt: startDateStr,
+          endAt: endDateStr,
+        })
+      } catch (error) {
+        console.error("경매 로드 실패:", error)
+        toast.error("경매를 불러오는데 실패했습니다")
+        router.push("/")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadAuction()
+  }, [auctionId, router, user, reset])
+
   const onSubmit = async (data: AuctionCreateFormData) => {
+    if (!auction) return
+
     try {
       setIsSubmitting(true)
 
-      // 이미지 파일 크기 검사 (5MB 제한, 백엔드 S3 업로드용)
-      for (const file of imageFiles) {
-        if (file.size > 5 * 1024 * 1024) {
-          toast.error(`이미지 크기가 너무 큽니다: ${file.name} (최대 5MB)`)
-          setIsSubmitting(false)
-          return
-        }
+      // 이미지 처리: 제거되지 않은 기존 이미지 + 새로 업로드한 이미지
+      const visibleExistingImages = existingImageUrls.filter((_, index) => !removedExistingImageIndices.has(index))
+
+      let imageUrls: string[] | null = null
+      
+      if (imageFiles.length > 0) {
+        // 새 이미지를 base64로 변환
+        const newImageUrls = await Promise.all(
+          imageFiles.map(
+            (file) =>
+              new Promise<string>((resolve, reject) => {
+                if (file.size > 5 * 1024 * 1024) {
+                  toast.error(`이미지 크기가 너무 큽니다: ${file.name} (최대 5MB)`)
+                  reject(new Error(`이미지 크기 초과: ${file.name}`))
+                  return
+                }
+                
+                const reader = new FileReader()
+                reader.onload = () => {
+                  const result = reader.result as string
+                  if (result.length > 2 * 1024 * 1024) {
+                    toast.warning(`이미지 ${file.name}의 크기가 큽니다. 저장 시 문제가 발생할 수 있습니다.`)
+                  }
+                  resolve(result)
+                }
+                reader.onerror = reject
+                reader.readAsDataURL(file)
+              })
+          )
+        )
+        // 기존 이미지 + 새 이미지 합치기
+        imageUrls = [...visibleExistingImages, ...newImageUrls]
+      } else if (visibleExistingImages.length > 0) {
+        // 기존 이미지만 유지
+        imageUrls = visibleExistingImages
       }
+
+      const imageUrl = imageUrls && imageUrls.length > 0 ? imageUrls[0] : null
 
       // 날짜 유효성 검사 및 ISO 형식으로 변환
       if (!data.startAt || !data.endAt || data.startAt.trim() === "" || data.endAt.trim() === "") {
@@ -68,21 +158,12 @@ export default function CreateAuctionPage() {
         return
       }
 
-      // datetime-local은 YYYY-MM-DDTHH:mm 형식
-      // 빈 문자열이나 잘못된 형식 체크
       const startDateTimeStr = data.startAt.trim()
       const endDateTimeStr = data.endAt.trim()
 
-      if (!startDateTimeStr || !endDateTimeStr) {
-        toast.error("시작일과 종료일을 모두 선택해주세요")
-        return
-      }
-
-      // Date 객체 생성 및 유효성 검사
       const startDateTimeObj = new Date(startDateTimeStr)
       const endDateTimeObj = new Date(endDateTimeStr)
 
-      // Invalid Date 체크
       if (isNaN(startDateTimeObj.getTime())) {
         toast.error(`유효하지 않은 시작일입니다: ${startDateTimeStr}`)
         return
@@ -93,7 +174,7 @@ export default function CreateAuctionPage() {
         return
       }
 
-      // 시작일이 과거인지 확인
+      // 시작일이 과거인지 확인 (수정 시에는 현재 시간 이후만 가능)
       const now = new Date()
       if (startDateTimeObj < now) {
         toast.error("경매 시작일은 현재 시간 이후여야 합니다")
@@ -105,25 +186,60 @@ export default function CreateAuctionPage() {
         return
       }
 
-      // 사용자가 선택한 시간(한국 시간)을 UTC ISO로 보냄 → 백엔드가 UTC로 저장·반환하면 상세에서 한국 시간으로 표시됨
-      const endAtUtcIso = endDateTimeObj.toISOString()
+      const startDateTimeISO = startDateTimeObj.toISOString()
+      const endDateTimeISO = endDateTimeObj.toISOString()
 
-      const auctionData: AuctionCreateRequest = {
-        title: data.title,
-        description: data.description,
-        startPrice: data.startPrice,
-        bidStep: data.bidStep,
-        endAt: endAtUtcIso,
-      }
+      // 경매 수정
+      const updatedAuction = await auctionApi.updateAuction(auctionId, {
+        ...data,
+        startAt: startDateTimeISO,
+        endAt: endDateTimeISO,
+        imageUrl,
+        imageUrls,
+        // currentPrice는 수정하지 않음 (입찰이 시작된 경우)
+        // status는 수정하지 않음
+        // winner는 수정하지 않음
+      })
 
-      const createdAuction = await auctionApi.createAuction(imageFiles, auctionData)
-      toast.success("경매가 생성되었습니다!")
-      router.push(`/auction/${createdAuction.id}`)
+      toast.success("경매가 수정되었습니다!")
+      router.push(`/auction/${auctionId}`)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "경매 생성에 실패했습니다")
+      console.error("경매 수정 에러:", error)
+      toast.error(error instanceof Error ? error.message : "경매 수정에 실패했습니다")
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  if (loading) {
+    return (
+      <ProtectedRoute>
+        <div className="min-h-screen bg-background">
+          <Navigation />
+          <main className="container mx-auto px-4 py-8">
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="size-8 animate-spin text-primary" />
+            </div>
+          </main>
+        </div>
+      </ProtectedRoute>
+    )
+  }
+
+  if (!auction) {
+    return (
+      <ProtectedRoute>
+        <div className="min-h-screen bg-background">
+          <Navigation />
+          <main className="container mx-auto px-4 py-8">
+            <Alert variant="destructive">
+              <AlertCircle className="size-4" />
+              <AlertDescription>경매를 찾을 수 없습니다</AlertDescription>
+            </Alert>
+          </main>
+        </div>
+      </ProtectedRoute>
+    )
   }
 
   return (
@@ -133,16 +249,22 @@ export default function CreateAuctionPage() {
         <main className="container mx-auto px-4 py-8">
           <Card className="mx-auto max-w-4xl">
             <CardHeader>
-              <CardTitle className="text-2xl">새 경매 만들기</CardTitle>
-              <CardDescription>경매 상품을 등록하세요</CardDescription>
+              <CardTitle className="text-2xl">경매 수정</CardTitle>
+              <CardDescription>경매 정보를 수정하세요</CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
                 {/* 경매 이미지 */}
                 <div className="space-y-2">
                   <Label>경매 상품 이미지 *</Label>
-                  <MultiImageUpload value={imageFiles} onChange={setImageFiles} maxImages={3} />
-                  {imageFiles.length === 0 && (
+                  <MultiImageUpload 
+                    value={imageFiles} 
+                    onChange={setImageFiles} 
+                    maxImages={3}
+                    existingImages={existingImageUrls}
+                    onExistingImagesChange={setRemovedExistingImageIndices}
+                  />
+                  {imageFiles.length === 0 && existingImageUrls.length === 0 && (
                     <p className="text-sm text-muted-foreground">경매 상품을 대표할 이미지를 업로드해주세요 (최대 3장)</p>
                   )}
                 </div>
@@ -199,7 +321,6 @@ export default function CreateAuctionPage() {
                         }
                       })}
                       placeholder="50000"
-                      defaultValue=""
                     />
                     {errors.startPrice && (
                       <Alert variant="destructive">
@@ -225,7 +346,6 @@ export default function CreateAuctionPage() {
                         }
                       })}
                       placeholder="5000"
-                      defaultValue=""
                     />
                     {errors.bidStep && (
                       <Alert variant="destructive">
@@ -283,9 +403,8 @@ export default function CreateAuctionPage() {
                       id="endAt"
                       type="datetime-local"
                       min={startDateTime ? (() => {
-                        // 시작일이 설정되어 있으면 시작일보다 1분 이후만 선택 가능
                         const startDate = new Date(startDateTime)
-                        const minEndDate = new Date(startDate.getTime() + 60000) // 1분 후
+                        const minEndDate = new Date(startDate.getTime() + 60000)
                         return minEndDate.toISOString().slice(0, 16)
                       })() : today}
                       disabled={!startDateTime}
@@ -308,7 +427,7 @@ export default function CreateAuctionPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => router.back()}
+                    onClick={() => router.push(`/auction/${auctionId}`)}
                     disabled={isSubmitting}
                   >
                     취소
@@ -317,10 +436,10 @@ export default function CreateAuctionPage() {
                     {isSubmitting ? (
                       <>
                         <Loader2 className="mr-2 size-4 animate-spin" />
-                        생성 중...
+                        수정 중...
                       </>
                     ) : (
-                      "경매 생성"
+                      "경매 수정"
                     )}
                   </Button>
                 </div>

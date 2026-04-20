@@ -14,6 +14,7 @@ interface RewardCardProps {
   remaining?: number
   backers: number
   featured?: boolean
+  onSelect?: () => void
 }
 
 export function RewardCard({
@@ -26,6 +27,7 @@ export function RewardCard({
   remaining,
   backers,
   featured,
+  onSelect,
 }: RewardCardProps) {
   return (
     <Card className={featured ? "border-primary shadow-lg" : ""}>
@@ -82,7 +84,12 @@ export function RewardCard({
       </CardContent>
 
       <CardFooter>
-        <Button className="w-full" size="lg" disabled={limited !== undefined && remaining === 0}>
+        <Button 
+          className="w-full" 
+          size="lg" 
+          disabled={limited !== undefined && remaining === 0}
+          onClick={onSelect}
+        >
           {limited !== undefined && remaining === 0 ? "품절" : "이 리워드 선택"}
         </Button>
       </CardFooter>
