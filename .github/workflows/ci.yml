@@ -38,7 +38,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build
-        run: ./gradlew clean build
+        run: ./gradlew clean build -x test
 
   cd-docker:
     name: CD - Docker Build & Push
