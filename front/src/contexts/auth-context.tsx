@@ -108,20 +108,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = async (data: RegisterRequest) => {
     try {
       const response: AuthResponse = await authApi.register(data)
-      
+
       tokenStorage.setAccessToken(response.accessToken)
       if (response.refreshToken) {
         tokenStorage.setRefreshToken(response.refreshToken)
       }
       setIsAuthenticated(true)
-      
-      // 사용자 정보가 있으면 저장, 없어도 토큰만 있으면 회원가입 성공
+
+      // 사용자 정보가 있으면 저장
       if (response.user && response.user.id !== 0) {
         tokenStorage.setUser(response.user)
         setUser(response.user)
       } else {
-        // 사용자 정보가 없으면 null로 설정 (토큰은 저장됨)
-        setUser(null)
+        // 사용자 정보가 없으면 백엔드에서 직접 조회 (login()과 동일한 fallback)
+        try {
+          const currentUser = await authApi.getCurrentUser()
+          tokenStorage.setUser(currentUser)
+          setUser(currentUser)
+        } catch (error) {
+          console.warn('회원가입 후 사용자 정보 조회 실패:', error)
+          setUser(null)
+        }
       }
     } catch (error) {
       throw error
