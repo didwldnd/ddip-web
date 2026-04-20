@@ -105,8 +105,12 @@ export interface AuctionCreateRequest {
   description: string;
   startPrice: number;
   bidStep: number;
+  startAt?: string; // ISO 8601 형식
   endAt: string; // ISO 8601 형식
+  status?: AuctionStatus;
   thumbnailImageUrl?: string | null;
+  imageUrl?: string | null;
+  imageUrls?: string[] | null;
   categoryPath?: string | null;
   tags?: string | null;
   summary?: string | null;
@@ -115,20 +119,20 @@ export interface AuctionCreateRequest {
 // 경매 상세 응답 타입
 export interface AuctionResponse {
   id: number;
-  seller: UserResponse;
+  seller?: UserResponse;
   title: string;
-  description: string;
+  description?: string | null;
   thumbnailImageUrl: string | null;
-  imageUrl: string | null; // 하위 호환성 유지 (첫 번째 이미지)
+  imageUrl?: string | null; // 하위 호환성 유지 (첫 번째 이미지)
   imageUrls?: string[] | null; // 다중 이미지 (최대 3장)
   startPrice: number;
   currentPrice: number;
   bidStep: number;
-  buyoutPrice: number | null;
+  buyoutPrice?: number | null;
   status: AuctionStatus;
   startAt: string;
   endAt: string;
-  winner: UserResponse | null;
+  winner?: UserResponse | null;
   categoryPath?: string | null;
   tags?: string | null;
   summary?: string | null;
@@ -141,18 +145,25 @@ export interface AuctionResponse {
 export interface AuctionSummary {
   id: number;
   title: string;
+  description?: string | null;
   thumbnailImageUrl: string | null;
   /** 목록/카드용 메인 이미지 URL (S3 풀 URL, thumbnailImageUrl과 동일 소스) */
   imageUrl?: string | null;
+  imageUrls?: string[] | null;
   startPrice: number;
   currentPrice: number;
   bidStep: number;
+  buyoutPrice?: number | null;
   status: AuctionStatus;
   startAt: string;
   endAt: string;
-  bidCount: number;
+  bidCount?: number;
+  seller?: UserResponse;
+  winner?: UserResponse | null;
   categoryPath?: string | null;
   summary?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 // 후원 관련 타입 (하위 호환성 유지)
@@ -210,20 +221,25 @@ export interface BidSummary {
   bidder: UserResponse;
   bidderNickname: string;
   bidPrice: number;
-  bidAt: string; // 입찰 시간
+  amount: number;   // bidPrice 별칭 (하위 호환)
+  bidAt: string;    // 입찰 시간
+  createdAt: string; // bidAt 별칭 (하위 호환)
 }
 
 // 내 입찰 현황 타입 (마이페이지용)
 export interface MyBidsSummary {
+  id?: number;        // 하위 호환
   auctionId: number;
   auctionTitle: string;
   auctionThumbnailUrl: string | null;
   auctionStatus: AuctionStatus;
   myAuctionStatus: MyAuctionStatus;
   lastBidPrice: number;
+  amount?: number;    // lastBidPrice 별칭 (하위 호환)
   currentPrice: number;
-  isHighestBidder: boolean; // 현재 최고 입찰자인지 여부
+  isHighestBidder: boolean;
   lastBidAt: string;
+  createdAt?: string; // lastBidAt 별칭 (하위 호환)
   auctionEndAt: string;
   isPaid: boolean;
 }

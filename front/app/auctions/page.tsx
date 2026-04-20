@@ -28,7 +28,7 @@ export default function AuctionsPage() {
         setLoading(true)
         pageRef.current = 1
         
-        await auctionApi.checkAllAuctionsStatus()
+        // await auctionApi.checkAllAuctionsStatus()
         const data = await auctionApi.getAuctions({ 
           page: 1, 
           limit: PAGE_SIZE, 
@@ -52,7 +52,7 @@ export default function AuctionsPage() {
   useEffect(() => {
     const checkStatus = async () => {
       try {
-        await auctionApi.checkAllAuctionsStatus()
+        // await auctionApi.checkAllAuctionsStatus()
         // 첫 페이지만 새로고침 (무한 스크롤 중에는 방해하지 않음)
         if (pageRef.current === 1) {
           const data = await auctionApi.getAuctions({ 

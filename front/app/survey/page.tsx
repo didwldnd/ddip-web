@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { surveyApi } from "@/src/services/api"
 import { UserType } from "@/src/types/api"
+import { tokenStorage } from "@/src/lib/auth"
 
 // ────────────────────────────────────────────
 // 설문 데이터
@@ -207,13 +208,28 @@ export default function SurveyPage() {
   // 제출 → BE 저장 후 메인으로
   const handleConfirm = async () => {
     if (!resultType) return
+
+    // 로그인 여부 확인
+    const token = tokenStorage.getAccessToken()
+    if (!token) {
+      toast.error("로그인이 필요합니다. 로그인 후 다시 시도해주세요.")
+      router.push("/login")
+      return
+    }
+
     try {
       setIsSubmitting(true)
       await surveyApi.saveSurvey(resultType)
       toast.success("성향이 저장되었어요! 맞춤 추천을 시작합니다.")
       router.push("/")
-    } catch {
-      toast.error("저장에 실패했어요. 다시 시도해주세요.")
+    } catch (error: any) {
+      const msg = error?.message || ""
+      if (msg.includes("401") || msg.includes("403")) {
+        toast.error("로그인이 필요합니다. 다시 로그인해주세요.")
+        router.push("/login")
+      } else {
+        toast.error("저장에 실패했어요. 다시 시도해주세요.")
+      }
     } finally {
       setIsSubmitting(false)
     }

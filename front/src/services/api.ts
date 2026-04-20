@@ -972,7 +972,9 @@ export const auctionApi = {
         },
         bidderNickname: bid.bidderNickname || bid.bidder_nickname || bid.bidder?.nickname || '',
         bidPrice: bid.bidPrice || bid.bid_price || 0,
+        amount: bid.bidPrice || bid.bid_price || 0,
         bidAt: bid.bidAt || bid.bid_at || bid.createdAt || '',
+        createdAt: bid.bidAt || bid.bid_at || bid.createdAt || '',
       }));
     } catch (error) {
       console.error('입찰 내역 조회 실패:', error);
@@ -1108,23 +1110,36 @@ export const userApi = {
             summary: auction.summary ?? null,
           };
         }),
-        myBids: await Promise.all((backendResponse.myBids || []).map(async (bid: any) => {
+        // 백엔드 UserPageResponseDto: bids = BidsSummaryDto[], myBids = MyBidsSummaryDto[]
+        myBids: await Promise.all((backendResponse.bids || backendResponse.myBids || []).map(async (bid: any) => {
+          const auctionSum = bid.auctionSummary;
           let auction: AuctionResponse;
           if (bid.auction) {
             auction = await auctionApi.getAuction(bid.auction.id || bid.auctionId || bid.auction_id);
+          } else if (auctionSum) {
+            // BidsSummaryDto에 auctionSummary가 중첩되어 있는 경우
+            auction = {
+              id: auctionSum.id || bid.auctionId || 0,
+              title: auctionSum.title || '',
+              thumbnailImageUrl: toS3ImageUrl(auctionSum.mainImageKey) || null,
+              imageUrl: toS3ImageUrl(auctionSum.mainImageKey) || null,
+              startPrice: auctionSum.startPrice || 0,
+              currentPrice: auctionSum.currentPrice || 0,
+              bidStep: auctionSum.bidStep || 0,
+              status: auctionSum.auctionStatus ?? 'SCHEDULED',
+              startAt: auctionSum.startAt || '',
+              endAt: auctionSum.endAt || '',
+              winner: null,
+            };
           } else {
-            // auction 정보가 없으면 빈 경매 객체 반환
             auction = {
               id: bid.auctionId || bid.auction_id || 0,
-              seller: { id: 0, email: null, name: '', nickname: '', profileImageUrl: null, phone: null },
               title: '',
-              description: '',
               thumbnailImageUrl: null,
               imageUrl: null,
               startPrice: 0,
               currentPrice: 0,
               bidStep: 0,
-              buyoutPrice: null,
               status: 'SCHEDULED',
               startAt: '',
               endAt: '',
@@ -1132,25 +1147,31 @@ export const userApi = {
             };
           }
           return {
-            bidId: bid.bidId || bid.bid_id || 0,
+            bidId: bid.id || bid.bidId || bid.bid_id || 0,
             auction,
-            bidPrice: bid.bidPrice || bid.bid_price || 0,
-            isHighestBidder: bid.isHighestBidder !== undefined ? bid.isHighestBidder : (bid.is_highest_bidder !== undefined ? bid.is_highest_bidder : false),
+            bidPrice: bid.price || bid.bidPrice || bid.bid_price || 0,
+            isHighestBidder: bid.isHighestBidder !== undefined ? bid.isHighestBidder : false,
           };
         })),
-        myMyBids: (backendResponse.myMyBids || []).map((myBid: any) => ({
-          auctionId: myBid.auctionId || myBid.auction_id || 0,
-          auctionTitle: myBid.auctionTitle || myBid.auction_title || '',
-          auctionThumbnailUrl: myBid.auctionThumbnailUrl || myBid.auction_thumbnail_url || null,
-          auctionStatus: myBid.auctionStatus || myBid.auction_status || 'SCHEDULED',
-          myAuctionStatus: myBid.myAuctionStatus || myBid.my_auction_status || 'OUTBID',
-          lastBidPrice: myBid.lastBidPrice || myBid.last_bid_price || 0,
-          currentPrice: myBid.currentPrice || myBid.current_price || 0,
-          isHighestBidder: myBid.isHighestBidder !== undefined ? myBid.isHighestBidder : (myBid.is_highest_bidder !== undefined ? myBid.is_highest_bidder : false),
-          lastBidAt: myBid.lastBidAt || myBid.last_bid_at || '',
-          auctionEndAt: myBid.auctionEndAt || myBid.auction_end_at || '',
-          isPaid: myBid.isPaid !== undefined ? myBid.isPaid : (myBid.is_paid !== undefined ? myBid.is_paid : false),
-        })),
+        // 백엔드 myBids = MyBidsSummaryDto[] (auctionSummary 중첩)
+        myMyBids: (backendResponse.myBids || backendResponse.myMyBids || []).map((myBid: any) => {
+          const auctionSum = myBid.auctionSummary;
+          const myAuctionStatus = myBid.myAuctionStatus || myBid.my_auction_status || 'OUTBID';
+          return {
+            id: myBid.id,
+            auctionId: myBid.auctionId || auctionSum?.id || 0,
+            auctionTitle: auctionSum?.title || myBid.auctionTitle || '',
+            auctionThumbnailUrl: toS3ImageUrl(auctionSum?.mainImageKey) || myBid.auctionThumbnailUrl || null,
+            auctionStatus: auctionSum?.auctionStatus || myBid.auctionStatus || 'SCHEDULED',
+            myAuctionStatus,
+            lastBidPrice: myBid.lastBidPrice || myBid.last_bid_price || 0,
+            currentPrice: auctionSum?.currentPrice || myBid.currentPrice || 0,
+            isHighestBidder: myAuctionStatus === 'HIGHEST_BIDDER' || myAuctionStatus === 'ENDED_WON',
+            lastBidAt: myBid.lastBidAt || myBid.last_bid_at || '',
+            auctionEndAt: auctionSum?.endAt || myBid.auctionEndAt || '',
+            isPaid: myBid.isPaid !== undefined ? myBid.isPaid : false,
+          };
+        }),
       };
     } catch (error) {
       console.error('마이페이지 조회 실패:', error);
@@ -1164,26 +1185,22 @@ export const userApi = {
    */
   getUserProfile: async (id: number): Promise<UserProfileResponse> => {
     try {
-      const backendResponse = await apiRequest<any>(`/api/users/${id}/profile`, {
+      // 백엔드는 /api/users/profile (인증된 사용자 본인 프로필만 지원)
+      const backendResponse = await apiRequest<any>(`/api/users/profile`, {
         method: 'GET',
       });
 
+      // 백엔드 /api/users/profile 은 flat 구조 (UserResponseDto) 반환
+      const src = backendResponse.user || backendResponse;
       return {
-        user: backendResponse.user ? {
-          id: backendResponse.user.id || 0,
-          email: backendResponse.user.email || null,
-          name: backendResponse.user.name || backendResponse.user.username || '',
-          nickname: backendResponse.user.nickname || '',
-          profileImageUrl: backendResponse.user.profileImageUrl || backendResponse.user.profile_image_url || null,
-          phone: backendResponse.user.phone || backendResponse.user.phoneNumber || null,
-          roleLevel: backendResponse.user.roleLevel || backendResponse.user.role_level || 0,
-        } : {
-          id: 0,
-          email: null,
-          name: '',
-          nickname: '',
-          profileImageUrl: null,
-          phone: null,
+        user: {
+          id: src.id || 0,
+          email: src.email || null,
+          name: src.name || src.username || '',
+          nickname: src.nickname || '',
+          profileImageUrl: src.profileImageUrl || src.profile_image_url || null,
+          phone: src.phone || src.phoneNumber || null,
+          roleLevel: src.roleLevel || src.role_level || 0,
         },
       };
     } catch (error) {
@@ -1228,8 +1245,8 @@ export const userApi = {
       if (data.phoneNumber !== undefined) requestData.phoneNumber = data.phoneNumber;
       if (data.profileImageUrl !== undefined) requestData.profileImageUrl = data.profileImageUrl;
 
-      const backendResponse = await apiRequest<any>('/api/users/me', {
-        method: 'PUT',
+      const backendResponse = await apiRequest<any>('/api/users/update', {
+        method: 'PATCH',
         body: JSON.stringify(requestData),
       });
 

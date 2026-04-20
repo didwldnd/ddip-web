@@ -88,7 +88,7 @@ export default function EditAuctionPage({ params }: { params: Promise<{ id: stri
         // 폼에 데이터 채우기
         reset({
           title: auctionData.title,
-          description: auctionData.description,
+          description: auctionData.description ?? undefined,
           startPrice: auctionData.startPrice,
           bidStep: auctionData.bidStep,
           buyoutPrice: auctionData.buyoutPrice,

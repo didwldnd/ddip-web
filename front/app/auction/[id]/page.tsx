@@ -128,7 +128,7 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
       const auctionId = parseInt(id, 10)
       if (isNaN(auctionId)) return
 
-        const updatedAuction = await auctionApi.checkAndUpdateAuctionStatus(auctionId)
+        const updatedAuction = await auctionApi.getAuction(auctionId)
         if (updatedAuction && updatedAuction.status !== auction.status) {
           // 상태가 변경되었으면 경매 정보 새로고침
           setAuction(updatedAuction)
@@ -581,6 +581,7 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
             </div>
 
             {/* Seller info */}
+            {auction.seller && (
             <Card className="mb-6">
               <CardHeader>
                 <div className="flex items-start justify-between">
@@ -604,6 +605,7 @@ export default function AuctionDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               </CardHeader>
             </Card>
+            )}
 
             {/* Tabs */}
             <Tabs defaultValue="description" className="w-full">

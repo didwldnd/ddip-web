@@ -80,7 +80,7 @@ export function isAuctionSeller(
   user: UserResponse | null
 ): boolean {
   if (!user || !auction) return false
-  return auction.seller.id === user.id
+  return auction.seller?.id === user.id
 }
 
 /**

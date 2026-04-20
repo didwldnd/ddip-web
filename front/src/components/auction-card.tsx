@@ -13,7 +13,7 @@ import { toast } from "sonner"
 interface AuctionCardProps {
   id: string
   title: string
-  description: string
+  description?: string | null
   image: string
   category: string
   currentBid: number

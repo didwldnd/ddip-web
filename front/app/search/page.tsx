@@ -11,7 +11,7 @@ import { Input } from "@/src/components/ui/input"
 import { useState, useEffect, Suspense, use, useMemo } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { projectApi, auctionApi } from "@/src/services/api"
-import { ProjectResponse, AuctionResponse } from "@/src/types/api"
+import { ProjectResponse, AuctionResponse, AuctionSummary } from "@/src/types/api"
 import { useFilterStore, filterAndSortProjects, filterAndSortAuctions } from "@/src/stores/filterStore"
 import { Loader2, Search, Package, Gavel } from "lucide-react"
 
@@ -21,7 +21,7 @@ function SearchContent() {
   const query = searchParams.get("q") || ""
   const [searchQuery, setSearchQuery] = useState(query)
   const [projects, setProjects] = useState<ProjectResponse[]>([])
-  const [auctions, setAuctions] = useState<AuctionResponse[]>([])
+  const [auctions, setAuctions] = useState<AuctionSummary[]>([])
   const [loading, setLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<"all" | "projects" | "auctions">("all")
   

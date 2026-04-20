@@ -1,4 +1,4 @@
-name: CI/CD (Backend - Gradle + Docker)
+name: CI/CD (Frontend - Next.js + Docker)
 
 on:
   push:
@@ -6,41 +6,38 @@ on:
       - "main"
       - "dev"
     paths:
-      - "backend/**"
+      - "front/**"
       - ".github/workflows/**"
   pull_request:
     branches:
       - "main"
       - "dev"
     paths:
-      - "backend/**"
+      - "front/**"
       - ".github/workflows/**"
 
 jobs:
   ci-build:
-    name: CI - Gradle Build
+    name: CI - Next.js Type Check
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: backend
+        working-directory: front
 
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
-          submodules: false
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: front/package-lock.json
 
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: gradle
-          cache-dependency-path: backend/**/*.gradle*
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x ./gradlew
-
-      - name: Build
-        run: ./gradlew clean build -x test
+      - name: Type check
+        run: npx tsc --noEmit
 
   cd-docker:
     name: CD - Docker Build & Push
@@ -51,8 +48,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: false
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -69,12 +64,14 @@ jobs:
       - name: Build & Push (multi-platform)
         uses: docker/build-push-action@v6
         with:
-          context: ./backend
-          file: ./backend/Dockerfile
+          context: ./front
+          file: ./front/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
+          build-args: |
+            NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
           tags: |
-            yeonwoo02/ddip-backend:latest
-            yeonwoo02/ddip-backend:${{ github.sha }}
+            yeonwoo02/ddip-frontend:latest
+            yeonwoo02/ddip-frontend:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
