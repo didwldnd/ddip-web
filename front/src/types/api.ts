@@ -1,3 +1,6 @@
+// 성향 유형
+export type UserType = 'VALUE_ORIENTED' | 'PRACTICAL_ORIENTED' | 'TREND_ORIENTED';
+
 // 공통 사용자 타입
 export interface UserResponse {
   id: number;
@@ -6,6 +9,7 @@ export interface UserResponse {
   nickname: string;
   profileImageUrl: string | null;
   phone: string | null;
+  userType?: UserType | null;
 }
 
 // 인증 관련 타입

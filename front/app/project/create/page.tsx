@@ -10,7 +10,21 @@ import { Input } from "@/src/components/ui/input"
 import { Label } from "@/src/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card"
 import { Alert, AlertDescription } from "@/src/components/ui/alert"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/src/components/ui/select"
 import { AlertCircle, Loader2 } from "lucide-react"
+
+const PROJECT_CATEGORIES = [
+  { value: "ENVIRONMENT", label: "🌱 환경/생태" },
+  { value: "SOCIAL",      label: "🤝 사회/공동체" },
+  { value: "EDUCATION",   label: "📚 교육/학습" },
+  { value: "CULTURE",     label: "🎨 문화/예술" },
+  { value: "TECH",        label: "💻 기술/IT" },
+  { value: "HEALTH",      label: "💪 건강/웰니스" },
+  { value: "FOOD",        label: "🍽️ 식품/음료" },
+  { value: "FASHION",     label: "👗 패션/뷰티" },
+  { value: "GAME",        label: "🎮 게임/취미" },
+  { value: "ETC",         label: "📦 기타" },
+]
 import { ProtectedRoute } from "@/src/components/protected-route"
 import { ImageUpload } from "@/src/components/image-upload"
 import { RewardTierForm, RewardTierFormData } from "@/src/components/reward-tier-form"
@@ -244,15 +258,24 @@ export default function CreateProjectPage() {
                   )}
                 </div>
 
-                {/* 카테고리 경로 */}
+                {/* 카테고리 */}
                 <div className="space-y-2">
-                  <Label htmlFor="categoryPath">카테고리 경로 (선택)</Label>
-                  <Input
-                    id="categoryPath"
-                    {...register("categoryPath")}
-                    placeholder="예: Tech/IoT/SmartHome (최대 100자)"
-                    maxLength={100}
-                  />
+                  <Label htmlFor="categoryPath">카테고리 *</Label>
+                  <Select
+                    onValueChange={(value) => setValue("categoryPath", value)}
+                    defaultValue=""
+                  >
+                    <SelectTrigger id="categoryPath">
+                      <SelectValue placeholder="카테고리를 선택하세요" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PROJECT_CATEGORIES.map((cat) => (
+                        <SelectItem key={cat.value} value={cat.value}>
+                          {cat.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   {errors.categoryPath && (
                     <Alert variant="destructive">
                       <AlertCircle className="size-4" />

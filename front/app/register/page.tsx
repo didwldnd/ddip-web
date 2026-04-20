@@ -63,9 +63,8 @@ export default function RegisterPage() {
         nickname: formData.nickname,
         phone: formData.phone || undefined,
       })
-      toast.success("회원가입 성공!")
-      router.push("/")
-      router.refresh()
+      toast.success("회원가입 성공! 성향 설문을 진행해주세요.")
+      router.push("/survey")
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "회원가입에 실패했습니다"
       setError(errorMessage)

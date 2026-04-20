@@ -9,6 +9,7 @@ import {
   SupportRequest,
   SupportResponse,
   BidResponse,
+  UserType,
 } from '@/src/types/api';
 import { tokenStorage } from '@/src/lib/auth';
 
@@ -958,5 +959,31 @@ export const authApi = {
     }
     // 토큰이 없으면 에러 발생 (실제로는 인증 필요)
     throw new Error('로그인이 필요합니다');
+  },
+};
+
+// API 함수들 - 설문 관련
+export const surveyApi = {
+  /**
+   * 설문 결과 저장 — PATCH /api/users/survey
+   */
+  saveSurvey: async (userType: UserType): Promise<void> => {
+    const token = tokenStorage.getAccessToken();
+    if (!token) throw new Error('로그인이 필요합니다');
+
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/survey`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ userType }),
+    });
+
+    if (!res.ok) throw new Error('설문 저장에 실패했습니다');
+
+    // 로컬 유저 정보도 업데이트
+    const saved = tokenStorage.getUser();
+    if (saved) tokenStorage.setUser({ ...saved, userType });
   },
 };
