@@ -8,7 +8,7 @@
 
 | 구분 | 링크 |
 |------|------|
-| 배포 | [https://ddip-web.vercel.app/](https://ddip-web.vercel.app/) |
+| 배포 | [https://ddip-web.vercel.app/](https://ddip-web.vercel.app/) — 현재 백엔드 비활성화로 API 기능 제한 |
 | 개인 Fork | [didwldnd/ddip-web](https://github.com/didwldnd/ddip-web) |
 | 원본 팀 저장소 | [YeonnWooo/ddip-web](https://github.com/YeonnWooo/ddip-web) |
 | 기본 브랜치 | [`front_setup`](https://github.com/didwldnd/ddip-web/tree/front_setup) |
@@ -20,8 +20,6 @@
 |------|------|------|
 | Frontend | 1명 (단독) | 웹 프론트엔드 전담 — UI, 클라이언트 상태, 인증 흐름, REST/실시간 연동, 관리자 화면 |
 | Backend | 2명 | REST API, 인증, 이미지(S3), WebSocket(STOMP) |
-
-프론트엔드는 [@didwldnd](https://github.com/didwldnd)가 단독 담당했습니다.
 
 ## Tech Stack
 
@@ -96,13 +94,15 @@ API 호출이 단일 대형 파일에 모여 있으면 검색·리뷰 범위가 
 
 **해결**
 
-크라우드·경매·사용자/인증/배송지·관리자·검색을 **도메인별 서비스 모듈**로 나누고, 공통 HTTP는 `apiClient`로 모았습니다. 중앙 `api.ts`는 구현을 두지 않고 **re-export 중심의 얇은 허브**(약 74줄)로 남겨, 기존 import 경로를 유지했습니다.
+크라우드·경매·사용자/인증/배송지·관리자·검색을 **도메인별 서비스 모듈**로 나누고, 공통 HTTP는 `apiClient`로 모았습니다. 중앙 `api.ts`는 구현을 두지 않고 **기존 import 경로를 유지하는 re-export 진입점**으로 남겨 두었습니다.
 
 **결과**
 
 도메인 변경 범위가 해당 서비스 파일로 줄고, 허브는 진입점만 담당합니다. 화면 코드의 import 경로를 일괄 수정하지 않고도 레이어를 나눌 수 있었습니다.
 
 ## 주요 화면
+
+> 화면은 예시 데이터로 구성했습니다.
 
 ### 크라우드펀딩
 
